@@ -1,0 +1,31 @@
+# Xcode & macOS build outputs
+.DS_Store
+build/
+Build/
+DerivedData/
+derivedData/
+.deriveddata/
+*.log
+build.log
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.xcuserdata
+xcuserdata/
+*.xccheckout
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Workspace local settings
+.idea/
+.vscode/
+
+# Scratch files & local tools
+exported_csvs/
+us_transactions_exchange_rates.csv
+manage_rates.py
+*.csv
+*.rtf
