@@ -58,14 +58,7 @@ struct DashboardView: View {
             
             let inrRate = PortfolioMetrics.currentInrExchangeRate(for: category, currencies: currencies)
             
-            let convertToDashboardCurrency: (Double) -> Double = { value in
-                if dashboardCurrency == "INR" {
-                    return value * inrRate
-                } else { // USD/INR Split Mode
-                    return value // keep original currency (USD for US stocks, INR for Indian assets)
-                }
-            }
-            
+
             for asset in assetsInCat {
                 let units = PortfolioMetrics.totalUnits(for: asset)
                 guard units > 0 else { continue }
