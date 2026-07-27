@@ -11,7 +11,7 @@ struct AssetDetailView: View {
     @Environment(\.dismiss) private var dismiss
     let asset: Asset
     @Query(sort: \Currency.code) private var currencies: [Currency]
-    @State private var displayInINR = false
+    @State private var displayInINR = true
     
     @State private var showUpdatePriceAlert = false
     @State private var priceInput = ""

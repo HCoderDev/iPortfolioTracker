@@ -70,17 +70,17 @@ struct DashboardView: View {
                 let units = PortfolioMetrics.totalUnits(for: asset)
                 guard units > 0 else { continue }
                 
-                let invested = PortfolioMetrics.investedValue(for: asset)
-                let value = PortfolioMetrics.currentValue(for: asset)
+                let invested = dashboardCurrency == "INR" ? PortfolioMetrics.investedValueInINR(for: asset, rate: inrRate) : PortfolioMetrics.investedValue(for: asset)
+                let value = dashboardCurrency == "INR" ? PortfolioMetrics.currentValueInINR(for: asset, rate: inrRate) : PortfolioMetrics.currentValue(for: asset)
                 
-                let convertedInvested = convertToDashboardCurrency(invested)
-                let convertedValue = convertToDashboardCurrency(value)
+                let convertedInvested = invested
+                let convertedValue = value
                 
                 catInvested += convertedInvested
                 catCurrentValue += convertedValue
                 assetRows.append(AssetRowData(asset: asset, value: convertedValue))
                 
-                catCurrentValueInINR += value * inrRate
+                catCurrentValueInINR += dashboardCurrency == "INR" ? value : (value * inrRate)
             }
             
             totalValue += catCurrentValueInINR

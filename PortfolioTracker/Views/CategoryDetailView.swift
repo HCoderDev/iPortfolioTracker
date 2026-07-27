@@ -67,7 +67,7 @@ struct CategoryDetailView: View {
     }
     
     private var summaryData: (invested: Double, currentValue: Double, unrealizedGL: Double, realizedPL: Double, totalPL: Double, xirr: Double?, lifetimeInvested: Double, lifetimeRetrieved: Double) {
-        let isConversionActive = category.currencyCode != "INR" && (category.convertToInr ?? false)
+        let isConversionActive = category.currencyCode != "INR" && category.isConvertToInr
         let rate = PortfolioMetrics.currentInrExchangeRate(for: category, currencies: currencies)
         
         var totalInvested = 0.0
@@ -112,7 +112,7 @@ struct CategoryDetailView: View {
     }
     
     private var assetAllocation: [PieSlice] {
-        let isConversionActive = category.currencyCode != "INR" && (category.convertToInr ?? false)
+        let isConversionActive = category.currencyCode != "INR" && category.isConvertToInr
         let rate = PortfolioMetrics.currentInrExchangeRate(for: category, currencies: currencies)
         
         return activeAssets.compactMap { asset in
@@ -122,7 +122,7 @@ struct CategoryDetailView: View {
     }
     
     private var subCategoryAllocation: [PieSlice] {
-        let isConversionActive = category.currencyCode != "INR" && (category.convertToInr ?? false)
+        let isConversionActive = category.currencyCode != "INR" && category.isConvertToInr
         let rate = PortfolioMetrics.currentInrExchangeRate(for: category, currencies: currencies)
         let active = activeAssets
         var subCatValues: [String: Double] = [:]
@@ -141,12 +141,12 @@ struct CategoryDetailView: View {
     
     var body: some View {
         let data = summaryData
-        let isConversionActive = category.currencyCode != "INR" && (category.convertToInr ?? false)
+        let isConversionActive = category.currencyCode != "INR" && category.isConvertToInr
         let rate = PortfolioMetrics.currentInrExchangeRate(for: category, currencies: currencies)
         
         let convertBinding = Binding<Bool>(
-            get: { category.convertToInr ?? false },
-            set: { category.convertToInr = $0 }
+            get: { category.isConvertToInr },
+            set: { category.isConvertToInr = $0 }
         )
         
         let rateBinding = Binding<String>(

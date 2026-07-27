@@ -10,6 +10,7 @@ struct PortfolioFlowsView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Category.name) private var categories: [Category]
     @Query private var transactions: [AssetTransaction]
+    @Query(sort: \Currency.code) private var currencies: [Currency]
     
     enum PeriodType: String, CaseIterable, Identifiable {
         case monthly = "Monthly"
@@ -21,6 +22,15 @@ struct PortfolioFlowsView: View {
     @State private var selectedPeriodType: PeriodType = .monthly
     @State private var selectedYear: Int = Calendar.current.component(.year, from: Date())
     @State private var selectedMonth: Int = Calendar.current.component(.month, from: Date())
+    @State private var displayInINR: Bool = true
+    
+    private func transactionRate(for tx: AssetTransaction) -> Double {
+        guard displayInINR else { return 1.0 }
+        guard let cat = tx.asset?.category else { return 1.0 }
+        if cat.currencyCode == "INR" { return 1.0 }
+        if let txRate = tx.inrExchangeRate { return txRate }
+        return PortfolioMetrics.currentInrExchangeRate(for: cat, currencies: currencies)
+    }
     
     private var startingYear: Int {
         let txYears = transactions
@@ -171,7 +181,7 @@ struct PortfolioFlowsView: View {
                     var sellCount = 0
                     
                     for tx in yearTx {
-                        let amount = tx.units * tx.pricePerUnit
+                        let amount = tx.units * tx.pricePerUnit * transactionRate(for: tx)
                         if tx.type == TransactionType.buy {
                             invested += amount
                             buyCount += 1
@@ -187,7 +197,7 @@ struct PortfolioFlowsView: View {
                 }
                 
                 let assetOverallNet = assetTx.reduce(0.0) { sum, tx in
-                    let amount = tx.units * tx.pricePerUnit
+                    let amount = tx.units * tx.pricePerUnit * transactionRate(for: tx)
                     if tx.type == .buy { return sum + amount }
                     else if tx.type == .sell { return sum - amount }
                     return sum
@@ -217,7 +227,7 @@ struct PortfolioFlowsView: View {
                 var sellCount = 0
                 
                 for tx in yearTx {
-                    let amount = tx.units * tx.pricePerUnit
+                    let amount = tx.units * tx.pricePerUnit * transactionRate(for: tx)
                     if tx.type == .buy {
                         invested += amount
                         buyCount += 1
@@ -233,7 +243,7 @@ struct PortfolioFlowsView: View {
             }
             
             let categoryOverallNet = categoryTx.reduce(0.0) { sum, tx in
-                let amount = tx.units * tx.pricePerUnit
+                let amount = tx.units * tx.pricePerUnit * transactionRate(for: tx)
                 if tx.type == .buy { return sum + amount }
                 else if tx.type == .sell { return sum - amount }
                 return sum
@@ -286,7 +296,7 @@ struct PortfolioFlowsView: View {
                     let monthBuys = assetTx.filter { calendar.component(.month, from: $0.date) == month && $0.type == .buy }
                     let monthSells = assetTx.filter { calendar.component(.month, from: $0.date) == month && $0.type == .sell }
                     
-                    let amount = monthBuys.reduce(0.0) { $0 + ($1.units * $1.pricePerUnit) }
+                    let amount = monthBuys.reduce(0.0) { $0 + ($1.units * $1.pricePerUnit * transactionRate(for: $1)) }
                     assetMonthly[month] = amount
                     assetMonthlyCounts[month] = (monthBuys.count, monthSells.count)
                     
@@ -315,7 +325,7 @@ struct PortfolioFlowsView: View {
                 let monthBuys = yearTx.filter { calendar.component(.month, from: $0.date) == month && $0.type == .buy }
                 let monthSells = yearTx.filter { calendar.component(.month, from: $0.date) == month && $0.type == .sell }
                 
-                let amount = monthBuys.reduce(0.0) { $0 + ($1.units * $1.pricePerUnit) }
+                let amount = monthBuys.reduce(0.0) { $0 + ($1.units * $1.pricePerUnit * transactionRate(for: $1)) }
                 categoryMonthly[month] = amount
                 categoryMonthlyCounts[month] = (monthBuys.count, monthSells.count)
                 
@@ -391,7 +401,7 @@ struct PortfolioFlowsView: View {
                 var assetDiv = 0
                 
                 for tx in assetTx {
-                    let amount = tx.units * tx.pricePerUnit
+                    let amount = tx.units * tx.pricePerUnit * transactionRate(for: tx)
                     switch tx.type {
                     case .buy:
                         assetInvested += amount
@@ -419,7 +429,7 @@ struct PortfolioFlowsView: View {
             }
             
             for tx in categoryTx {
-                let amount = tx.units * tx.pricePerUnit
+                let amount = tx.units * tx.pricePerUnit * transactionRate(for: tx)
                 switch tx.type {
                 case .buy:
                     categoryInvested += amount
@@ -461,6 +471,21 @@ struct PortfolioFlowsView: View {
             LazyVStack(spacing: 16) {
                 // Period Selector Card
                 VStack(spacing: 12) {
+                    HStack {
+                        Text("CURRENCY DISPLAY")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    
+                    Picker("Currency Display", selection: $displayInINR) {
+                        Text("INR (₹) Default").tag(true)
+                        Text("Native Currency").tag(false)
+                    }
+                    .pickerStyle(.segmented)
+                    
+                    Divider()
+                    
                     Picker("Period Type", selection: $selectedPeriodType) {
                         ForEach(PeriodType.allCases) { type in
                             Text(type.rawValue).tag(type)
@@ -520,6 +545,7 @@ struct PortfolioFlowsView: View {
                 .padding(.horizontal, 20)
                 
                 let data = flowsData
+                let currencyPrefix = displayInINR ? "₹" : ""
                 
                 // Comprehensive Combined Summary Card (Amounts + Trade Activity)
                 VStack(spacing: 14) {
@@ -538,7 +564,7 @@ struct PortfolioFlowsView: View {
                             Text("Total Invested")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                            Text("₹\(data.totalInvested.formattedComma)")
+                            Text("\(currencyPrefix)\(data.totalInvested.formattedComma)")
                                 .font(.system(size: 20, weight: .bold, design: .rounded))
                                 .monospacedDigit()
                                 .foregroundStyle(.primary)
@@ -548,7 +574,7 @@ struct PortfolioFlowsView: View {
                             Text("Total Withdrawn")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                            Text("₹\(data.totalWithdrawn.formattedComma)")
+                            Text("\(currencyPrefix)\(data.totalWithdrawn.formattedComma)")
                                 .font(.system(size: 20, weight: .bold, design: .rounded))
                                 .monospacedDigit()
                                 .foregroundStyle(.primary)
@@ -648,7 +674,7 @@ struct PortfolioFlowsView: View {
                                                 Text(catFlow.category.name)
                                                     .font(.headline)
                                                     .foregroundStyle(.primary)
-                                                Text("(\(catFlow.category.currencyCode))")
+                                                Text("(\(displayInINR ? "INR ₹" : catFlow.category.currencyCode))")
                                                     .font(.caption)
                                                     .foregroundStyle(.secondary)
                                                 Spacer()

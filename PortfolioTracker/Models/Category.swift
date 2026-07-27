@@ -20,6 +20,11 @@ final class Category {
         set { targetAllocation = newValue }
     }
     
+    var isConvertToInr: Bool {
+        get { convertToInr ?? true }
+        set { convertToInr = newValue }
+    }
+    
     @Relationship(deleteRule: .cascade, inverse: \Asset.category)
     var assets: [Asset] = []
     
@@ -30,7 +35,7 @@ final class Category {
         name: String,
         currencyCode: String,
         lastInrExchangeRate: Double? = nil,
-        convertToInr: Bool? = false,
+        convertToInr: Bool? = true,
         isIndividualEquity: Bool? = false,
         targetAllocation: Double? = 0.0
     ) {
