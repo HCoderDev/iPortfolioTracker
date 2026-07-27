@@ -226,7 +226,7 @@ struct PortfolioSnapshotsView: View {
                     let totalInterest = filteredTx.filter { $0.type == .dividend }.reduce(0.0) { $0 + $1.pricePerUnit }
                     invested = max(0, asset.currentPrice - totalInterest)
                 } else {
-                    invested = LifoCalculator.calculate(transactions: filteredTx).holdings.reduce(0.0) { partialResult, lot in
+                    invested = FifoCalculator.calculate(transactions: filteredTx).holdings.reduce(0.0) { partialResult, lot in
                         partialResult + (lot.remainingUnits * lot.buyPrice)
                     }
                 }
@@ -241,7 +241,7 @@ struct PortfolioSnapshotsView: View {
                     let currentValueInINR = asset.currentPrice * rate
                     return max(0, currentValueInINR - totalInterest)
                 }() : {
-                    LifoCalculator.calculateInINR(transactions: filteredTx, categoryExchangeRate: rate).holdings.reduce(0.0) { partialResult, lot in
+                    FifoCalculator.calculateInINR(transactions: filteredTx, categoryExchangeRate: rate).holdings.reduce(0.0) { partialResult, lot in
                         partialResult + lot.remainingUnits * lot.buyPriceINR
                     }
                 }()
@@ -352,7 +352,7 @@ struct TakeSnapshotSheet: View {
                     let currentValueInINR = asset.currentPrice * rate
                     invested = max(0, currentValueInINR - totalInterest)
                 } else {
-                    invested = LifoCalculator.calculateInINR(transactions: filteredTx, categoryExchangeRate: rate).holdings.reduce(0.0) { partialResult, lot in
+                    invested = FifoCalculator.calculateInINR(transactions: filteredTx, categoryExchangeRate: rate).holdings.reduce(0.0) { partialResult, lot in
                         partialResult + lot.remainingUnits * lot.buyPriceINR
                     }
                 }

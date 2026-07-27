@@ -67,17 +67,17 @@ enum PortfolioMetrics {
             let totalInterest = asset.transactions.filter { $0.type == .dividend }.reduce(0.0) { $0 + $1.pricePerUnit }
             return max(0, asset.currentPrice - totalInterest)
         }
-        return LifoCalculator.calculate(transactions: asset.transactions).holdings.reduce(0.0) { partialResult, lot in
+        return FifoCalculator.calculate(transactions: asset.transactions).holdings.reduce(0.0) { partialResult, lot in
             partialResult + (lot.remainingUnits * lot.buyPrice)
         }
     }
     
     static func lifetimeInvested(for asset: Asset) -> Double {
-        LifoCalculator.calculate(transactions: asset.transactions).lifetimeInvested
+        FifoCalculator.calculate(transactions: asset.transactions).lifetimeInvested
     }
     
     static func lifetimeRetrieved(for asset: Asset) -> Double {
-        LifoCalculator.calculate(transactions: asset.transactions).lifetimeRetrieved
+        FifoCalculator.calculate(transactions: asset.transactions).lifetimeRetrieved
     }
     
     static func currentValue(for asset: Asset) -> Double {
@@ -178,17 +178,17 @@ enum PortfolioMetrics {
             let currentValueInINR = asset.currentPrice * rate
             return max(0, currentValueInINR - totalInterest)
         }
-        return LifoCalculator.calculateInINR(transactions: asset.transactions, categoryExchangeRate: rate).holdings.reduce(0.0) { partialResult, lot in
+        return FifoCalculator.calculateInINR(transactions: asset.transactions, categoryExchangeRate: rate).holdings.reduce(0.0) { partialResult, lot in
             partialResult + lot.remainingUnits * lot.buyPriceINR
         }
     }
     
     static func lifetimeInvestedInINR(for asset: Asset, rate: Double) -> Double {
-        LifoCalculator.calculateInINR(transactions: asset.transactions, categoryExchangeRate: rate).lifetimeInvested
+        FifoCalculator.calculateInINR(transactions: asset.transactions, categoryExchangeRate: rate).lifetimeInvested
     }
     
     static func lifetimeRetrievedInINR(for asset: Asset, rate: Double) -> Double {
-        LifoCalculator.calculateInINR(transactions: asset.transactions, categoryExchangeRate: rate).lifetimeRetrieved
+        FifoCalculator.calculateInINR(transactions: asset.transactions, categoryExchangeRate: rate).lifetimeRetrieved
     }
     
     static func currentValueInINR(for asset: Asset, rate: Double) -> Double {

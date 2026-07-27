@@ -81,25 +81,25 @@ struct CategoryDetailView: View {
             if isConversionActive {
                 let currentValue = PortfolioMetrics.currentValueInINR(for: asset, rate: rate)
                 let invested = PortfolioMetrics.investedValueInINR(for: asset, rate: rate)
-                let lifoResult = LifoCalculator.calculateInINR(transactions: asset.transactions, categoryExchangeRate: rate)
+                let fifoResult = FifoCalculator.calculateInINR(transactions: asset.transactions, categoryExchangeRate: rate)
                 
                 totalInvested += invested
                 totalCurrentValue += currentValue
-                totalRealizedPL += lifoResult.realizedProfitLoss
-                totalLifetimeInvested += lifoResult.lifetimeInvested
-                totalLifetimeRetrieved += lifoResult.lifetimeRetrieved
+                totalRealizedPL += fifoResult.realizedProfitLoss
+                totalLifetimeInvested += fifoResult.lifetimeInvested
+                totalLifetimeRetrieved += fifoResult.lifetimeRetrieved
                 
                 allCashFlows.append(contentsOf: PortfolioMetrics.cashFlowsInINR(for: asset, rate: rate))
             } else {
                 let currentValue = PortfolioMetrics.currentValue(for: asset)
                 let invested = PortfolioMetrics.investedValue(for: asset)
-                let lifoResult = LifoCalculator.calculate(transactions: asset.transactions)
+                let fifoResult = FifoCalculator.calculate(transactions: asset.transactions)
                 
                 totalInvested += invested
                 totalCurrentValue += currentValue
-                totalRealizedPL += lifoResult.realizedProfitLoss
-                totalLifetimeInvested += lifoResult.lifetimeInvested
-                totalLifetimeRetrieved += lifoResult.lifetimeRetrieved
+                totalRealizedPL += fifoResult.realizedProfitLoss
+                totalLifetimeInvested += fifoResult.lifetimeInvested
+                totalLifetimeRetrieved += fifoResult.lifetimeRetrieved
                 
                 allCashFlows.append(contentsOf: PortfolioMetrics.cashFlows(for: asset))
             }
@@ -610,8 +610,8 @@ struct CategoryAssetCardView: View {
     let isIndividualEquity: Bool
     let onEdit: () -> Void
     
-    private var lifoResult: LifoResult {
-        LifoCalculator.calculate(transactions: asset.transactions)
+    private var fifoResult: FifoResult {
+        FifoCalculator.calculate(transactions: asset.transactions)
     }
     
     private var totalUnits: Double {
@@ -777,9 +777,9 @@ struct SoldOffAssetCardView: View {
     
     private var realizedProfitLoss: Double {
         if isConversionActive {
-            return LifoCalculator.calculateInINR(transactions: asset.transactions, categoryExchangeRate: rate).realizedProfitLoss
+            return FifoCalculator.calculateInINR(transactions: asset.transactions, categoryExchangeRate: rate).realizedProfitLoss
         } else {
-            return LifoCalculator.calculate(transactions: asset.transactions).realizedProfitLoss
+            return FifoCalculator.calculate(transactions: asset.transactions).realizedProfitLoss
         }
     }
     

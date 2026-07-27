@@ -51,7 +51,7 @@ struct TransactionFormView: View {
                 createdAt: $0.createdAt
             )
         }
-        return !LifoCalculator.hasSufficientUnits(entries: currentEntries + [candidate])
+        return !FifoCalculator.hasSufficientUnits(entries: currentEntries + [candidate])
     }
     
     var body: some View {
@@ -220,7 +220,7 @@ struct EditTransactionSheet: View {
                     createdAt: $0.createdAt
                 )
             }
-        return LifoCalculator.hasSufficientUnits(entries: otherTransactions + [updatedTransaction])
+        return FifoCalculator.hasSufficientUnits(entries: otherTransactions + [updatedTransaction])
     }
     
     var body: some View {

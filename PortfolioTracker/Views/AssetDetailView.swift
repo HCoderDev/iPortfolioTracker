@@ -23,13 +23,6 @@ struct AssetDetailView: View {
     @State private var reminderToEdit: AssetReminder?
     @State private var showDeleteConfirmation = false
     @State private var showTaxOverrideSheet = false
-    
-    enum AccountingMethod: String, CaseIterable, Identifiable {
-        case lifo = "LIFO"
-        case fifo = "FIFO"
-        var id: String { self.rawValue }
-    }
-    @State private var holdingsMethod: AccountingMethod = .lifo
     @State private var showValueAnalysisForm = false
     @State private var showValueAnalysisDetail = false
     @State private var showDCFAnalysisForm = false
@@ -108,22 +101,12 @@ struct AssetDetailView: View {
     }
     
     private var displayHoldings: [HoldingLotDisplayItem] {
-        if holdingsMethod == .lifo {
-            if isConversionActive {
-                let res = LifoCalculator.calculateInINR(transactions: asset.transactions, categoryExchangeRate: currentRate)
-                return res.holdings.map { HoldingLotDisplayItem(id: $0.id, originalUnits: $0.originalUnits, remainingUnits: $0.remainingUnits, buyPrice: $0.buyPriceINR, date: $0.date) }
-            } else {
-                let res = LifoCalculator.calculate(transactions: asset.transactions)
-                return res.holdings.map { HoldingLotDisplayItem(id: $0.id, originalUnits: $0.originalUnits, remainingUnits: $0.remainingUnits, buyPrice: $0.buyPrice, date: $0.date) }
-            }
+        if isConversionActive {
+            let res = FifoCalculator.calculateInINR(transactions: asset.transactions, categoryExchangeRate: currentRate)
+            return res.holdings.map { HoldingLotDisplayItem(id: $0.id, originalUnits: $0.originalUnits, remainingUnits: $0.remainingUnits, buyPrice: $0.buyPriceINR, date: $0.date) }
         } else {
-            if isConversionActive {
-                let res = FifoCalculator.calculateInINR(transactions: asset.transactions, categoryExchangeRate: currentRate)
-                return res.holdings.map { HoldingLotDisplayItem(id: $0.id, originalUnits: $0.originalUnits, remainingUnits: $0.remainingUnits, buyPrice: $0.buyPriceINR, date: $0.date) }
-            } else {
-                let res = FifoCalculator.calculate(transactions: asset.transactions)
-                return res.holdings.map { HoldingLotDisplayItem(id: $0.id, originalUnits: $0.originalUnits, remainingUnits: $0.remainingUnits, buyPrice: $0.buyPrice, date: $0.date) }
-            }
+            let res = FifoCalculator.calculate(transactions: asset.transactions)
+            return res.holdings.map { HoldingLotDisplayItem(id: $0.id, originalUnits: $0.originalUnits, remainingUnits: $0.remainingUnits, buyPrice: $0.buyPrice, date: $0.date) }
         }
     }
     
@@ -218,8 +201,8 @@ struct AssetDetailView: View {
         }
     }
     
-    private var lifoResult: LifoResult {
-        LifoCalculator.calculate(transactions: asset.transactions)
+    private var fifoResult: FifoResult {
+        FifoCalculator.calculate(transactions: asset.transactions)
     }
     
     private var totalUnits: Double {
@@ -262,10 +245,6 @@ struct AssetDetailView: View {
         Array(PortfolioMetrics.reverseOrderedTransactions(asset.transactions))
     }
     
-    private var realizedSellProfitByTransaction: [PersistentIdentifier: Double] {
-        LifoCalculator.realizedProfitLossBySellTransaction(transactions: asset.transactions)
-    }
-    
     private var sortedNotes: [AssetNote] {
         asset.notes.sorted {
             if $0.date == $1.date {
@@ -275,35 +254,14 @@ struct AssetDetailView: View {
         }
     }
     
-    private var fifoResult: LifoResult {
-        FifoCalculator.calculate(transactions: asset.transactions)
+    private var activeAverageBuyPrice: Double {
+        totalUnits > 0 ? activeTotalInvested / totalUnits : 0.0
     }
     
-    private var activeAverageBuyPriceLIFO: Double {
-        totalUnits > 0 ? activeTotalInvestedLIFO / totalUnits : 0.0
-    }
-    
-    private var activeAverageBuyPriceFIFO: Double {
-        totalUnits > 0 ? activeTotalInvestedFIFO / totalUnits : 0.0
-    }
-    
-    private var activeTotalInvestedLIFO: Double {
+    private var activeTotalInvested: Double {
         isConversionActive 
             ? PortfolioMetrics.investedValueInINR(for: asset, rate: currentRate)
             : totalInvested
-    }
-    
-    private var activeTotalInvestedFIFO: Double {
-        if asset.holdingType == .bankBalance || asset.holdingType == .fixedDeposit {
-            return activeTotalInvestedLIFO
-        }
-        if isConversionActive {
-            let res = FifoCalculator.calculateInINR(transactions: asset.transactions, categoryExchangeRate: currentRate)
-            return res.holdings.reduce(0.0) { $0 + $1.remainingUnits * $1.buyPriceINR }
-        } else {
-            let res = FifoCalculator.calculate(transactions: asset.transactions)
-            return res.holdings.reduce(0.0) { $0 + $1.remainingUnits * $1.buyPrice }
-        }
     }
     
     private var activeCurrentValue: Double {
@@ -312,23 +270,11 @@ struct AssetDetailView: View {
             : currentValue
     }
     
-    private var activeUnrealizedGainLossLIFO: Double {
-        activeCurrentValue - activeTotalInvestedLIFO
+    private var activeUnrealizedGainLoss: Double {
+        activeCurrentValue - activeTotalInvested
     }
     
-    private var activeUnrealizedGainLossFIFO: Double {
-        activeCurrentValue - activeTotalInvestedFIFO
-    }
-    
-    private var activeRealizedProfitLossLIFO: Double {
-        if isConversionActive {
-            return LifoCalculator.calculateInINR(transactions: asset.transactions, categoryExchangeRate: currentRate).realizedProfitLoss
-        } else {
-            return lifoResult.realizedProfitLoss
-        }
-    }
-    
-    private var activeRealizedProfitLossFIFO: Double {
+    private var activeRealizedProfitLoss: Double {
         if isConversionActive {
             return FifoCalculator.calculateInINR(transactions: asset.transactions, categoryExchangeRate: currentRate).realizedProfitLoss
         } else {
@@ -336,32 +282,16 @@ struct AssetDetailView: View {
         }
     }
     
-    private var activeLifetimeInvestedLIFO: Double {
+    private var activeLifetimeInvested: Double {
         isConversionActive
             ? PortfolioMetrics.lifetimeInvestedInINR(for: asset, rate: currentRate)
             : lifetimeInvested
     }
     
-    private var activeLifetimeInvestedFIFO: Double {
-        if isConversionActive {
-            return FifoCalculator.calculateInINR(transactions: asset.transactions, categoryExchangeRate: currentRate).lifetimeInvested
-        } else {
-            return fifoResult.lifetimeInvested
-        }
-    }
-    
-    private var activeLifetimeRetrievedLIFO: Double {
+    private var activeLifetimeRetrieved: Double {
         isConversionActive
             ? PortfolioMetrics.lifetimeRetrievedInINR(for: asset, rate: currentRate)
             : lifetimeRetrieved
-    }
-    
-    private var activeLifetimeRetrievedFIFO: Double {
-        if isConversionActive {
-            return FifoCalculator.calculateInINR(transactions: asset.transactions, categoryExchangeRate: currentRate).lifetimeRetrieved
-        } else {
-            return fifoResult.lifetimeRetrieved
-        }
     }
     
     private var activeXirr: Double? {
@@ -370,15 +300,7 @@ struct AssetDetailView: View {
             : xirr
     }
     
-    private var activeRealizedSellProfitByTransactionLIFO: [PersistentIdentifier: Double] {
-        if isConversionActive {
-            return LifoCalculator.realizedProfitLossBySellTransactionInINR(transactions: asset.transactions, categoryExchangeRate: currentRate)
-        } else {
-            return realizedSellProfitByTransaction
-        }
-    }
-    
-    private var activeRealizedSellProfitByTransactionFIFO: [PersistentIdentifier: Double] {
+    private var activeRealizedSellProfitByTransaction: [PersistentIdentifier: Double] {
         if isConversionActive {
             return FifoCalculator.realizedProfitLossBySellTransactionInINR(transactions: asset.transactions, categoryExchangeRate: currentRate)
         } else {
@@ -426,7 +348,7 @@ struct AssetDetailView: View {
                         }
                         
                         // Holdings Section
-                        if asset.holdingType == .investment, !lifoResult.holdings.isEmpty {
+                        if asset.holdingType == .investment, !fifoResult.holdings.isEmpty {
                             holdingsSection
                         }
                         
@@ -573,21 +495,17 @@ struct AssetDetailView: View {
             }
             
             Divider()
-            
-            HStack(alignment: .center) {
+                       HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 4) {
                     if asset.holdingType == .investment {
                         Text("Total Units: \(totalUnits.formatted2)")
                             .font(.system(size: 13, weight: .medium))
                             .monospacedDigit()
-                        Text("Avg Price (LIFO): \(currencySymbol)\(activeAverageBuyPriceLIFO.formatted2)")
-                            .font(.system(size: 13, weight: .regular))
-                            .monospacedDigit()
-                        Text("Avg Price (FIFO): \(currencySymbol)\(activeAverageBuyPriceFIFO.formatted2)")
+                        Text("Avg Buy Price: \(currencySymbol)\(activeAverageBuyPrice.formatted2)")
                             .font(.system(size: 13, weight: .regular))
                             .monospacedDigit()
                     } else {
-                        Text("Principal Deposit: \(currencySymbol)\(activeAverageBuyPriceLIFO.formatted2)")
+                        Text("Principal Deposit: \(currencySymbol)\(activeAverageBuyPrice.formatted2)")
                             .font(.system(size: 13, weight: .medium))
                             .monospacedDigit()
                     }
@@ -610,38 +528,15 @@ struct AssetDetailView: View {
             Divider()
             
             VStack(alignment: .leading, spacing: 10) {
-                // Header row
-                HStack {
-                    Text("Metric")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Text("LIFO")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 100, alignment: .trailing)
-                    Text("FIFO")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 100, alignment: .trailing)
-                }
-                
-                Divider()
-                
                 // Invested Value
                 HStack {
                     Text("Invested Value")
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    Text("\(currencySymbol)\(activeTotalInvestedLIFO.formattedComma)")
+                    Text("\(currencySymbol)\(activeTotalInvested.formattedComma)")
                         .font(.system(size: 13, weight: .medium, design: .rounded))
                         .monospacedDigit()
-                        .frame(width: 100, alignment: .trailing)
-                    Text("\(currencySymbol)\(activeTotalInvestedFIFO.formattedComma)")
-                        .font(.system(size: 13, weight: .medium, design: .rounded))
-                        .monospacedDigit()
-                        .frame(width: 100, alignment: .trailing)
                 }
                 
                 // Current Value
@@ -653,7 +548,6 @@ struct AssetDetailView: View {
                     Text("\(currencySymbol)\(activeCurrentValue.formattedComma)")
                         .font(.system(size: 13, weight: .bold, design: .rounded))
                         .monospacedDigit()
-                        .frame(width: 200 + 8, alignment: .trailing)
                 }
                 
                 // Unrealized G/L
@@ -662,12 +556,7 @@ struct AssetDetailView: View {
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    
-                    GainLossBadge(value: activeUnrealizedGainLossLIFO, percentage: activeTotalInvestedLIFO > 0 ? (activeUnrealizedGainLossLIFO / activeTotalInvestedLIFO) * 100.0 : nil, isCompact: true)
-                        .frame(width: 100, alignment: .trailing)
-                    
-                    GainLossBadge(value: activeUnrealizedGainLossFIFO, percentage: activeTotalInvestedFIFO > 0 ? (activeUnrealizedGainLossFIFO / activeTotalInvestedFIFO) * 100.0 : nil, isCompact: true)
-                        .frame(width: 100, alignment: .trailing)
+                    GainLossBadge(value: activeUnrealizedGainLoss, percentage: activeTotalInvested > 0 ? (activeUnrealizedGainLoss / activeTotalInvested) * 100.0 : nil, isCompact: true)
                 }
                 
                 // Realized P/L
@@ -676,16 +565,10 @@ struct AssetDetailView: View {
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    Text("\(currencySymbol)\(activeRealizedProfitLossLIFO.formattedComma)")
+                    Text("\(currencySymbol)\(activeRealizedProfitLoss.formattedComma)")
                         .font(.system(size: 13, weight: .bold, design: .rounded))
                         .monospacedDigit()
-                        .foregroundStyle(activeRealizedProfitLossLIFO >= 0 ? AppTheme.profit : AppTheme.loss)
-                        .frame(width: 100, alignment: .trailing)
-                    Text("\(currencySymbol)\(activeRealizedProfitLossFIFO.formattedComma)")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(activeRealizedProfitLossFIFO >= 0 ? AppTheme.profit : AppTheme.loss)
-                        .frame(width: 100, alignment: .trailing)
+                        .foregroundStyle(activeRealizedProfitLoss >= 0 ? AppTheme.profit : AppTheme.loss)
                 }
                 
                 // Lifetime Invested
@@ -694,16 +577,10 @@ struct AssetDetailView: View {
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    Text("\(currencySymbol)\(activeLifetimeInvestedLIFO.formattedComma)")
+                    Text("\(currencySymbol)\(activeLifetimeInvested.formattedComma)")
                         .font(.system(size: 13, weight: .regular, design: .rounded))
                         .monospacedDigit()
-                        .frame(width: 100, alignment: .trailing)
-                    Text("\(currencySymbol)\(activeLifetimeInvestedFIFO.formattedComma)")
-                        .font(.system(size: 13, weight: .regular, design: .rounded))
-                        .monospacedDigit()
-                        .frame(width: 100, alignment: .trailing)
                 }
-
                 
                 // Lifetime Retrieved
                 HStack {
@@ -711,12 +588,9 @@ struct AssetDetailView: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    Text("\(currencySymbol)\(activeLifetimeRetrievedLIFO.formattedComma)")
+                    Text("\(currencySymbol)\(activeLifetimeRetrieved.formattedComma)")
                         .font(.subheadline)
-                        .frame(width: 90, alignment: .trailing)
-                    Text("\(currencySymbol)\(activeLifetimeRetrievedFIFO.formattedComma)")
-                        .font(.subheadline)
-                        .frame(width: 90, alignment: .trailing)
+                        .monospacedDigit()
                 }
                 
                 // XIRR
@@ -728,7 +602,6 @@ struct AssetDetailView: View {
                     Text(activeXirr != nil ? String(format: "%.2f%%", activeXirr!) : "N/A")
                         .font(.subheadline)
                         .fontWeight(.bold)
-                        .frame(width: 180 + 8, alignment: .trailing)
                 }
             }
         }
@@ -792,13 +665,6 @@ struct AssetDetailView: View {
                 Text("Current Holdings")
                     .font(.headline)
                 Spacer()
-                Picker("Holdings Method", selection: $holdingsMethod) {
-                    ForEach(AccountingMethod.allCases) { method in
-                        Text(method.rawValue).tag(method)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 120)
             }
             .padding(.horizontal)
             
@@ -951,22 +817,11 @@ struct AssetDetailView: View {
                                     .foregroundStyle(.tertiary)
                             }
                             if tx.type == .sell {
-                                HStack(spacing: 8) {
-                                    if let realizedProfitLIFO = activeRealizedSellProfitByTransactionLIFO[tx.persistentModelID] {
-                                        Text("LIFO: \(currencySymbol)\(realizedProfitLIFO.formattedComma)")
-                                            .font(.caption2)
-                                            .fontWeight(.bold)
-                                            .foregroundStyle(realizedProfitLIFO >= 0 ? AppTheme.profit : AppTheme.loss)
-                                    }
-                                    Text("·")
+                                if let realizedProfit = activeRealizedSellProfitByTransaction[tx.persistentModelID] {
+                                    Text("Realized P/L: \(currencySymbol)\(realizedProfit.formattedComma)")
                                         .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                    if let realizedProfitFIFO = activeRealizedSellProfitByTransactionFIFO[tx.persistentModelID] {
-                                        Text("FIFO: \(currencySymbol)\(realizedProfitFIFO.formattedComma)")
-                                            .font(.caption2)
-                                            .fontWeight(.bold)
-                                            .foregroundStyle(realizedProfitFIFO >= 0 ? AppTheme.profit : AppTheme.loss)
-                                    }
+                                        .fontWeight(.bold)
+                                        .foregroundStyle(realizedProfit >= 0 ? AppTheme.profit : AppTheme.loss)
                                 }
                             }
                         }

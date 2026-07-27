@@ -8,6 +8,44 @@
 import Foundation
 import SwiftData
 
+struct HoldingLot: Identifiable {
+    let id = UUID()
+    let originalUnits: Double
+    let remainingUnits: Double
+    let buyPrice: Double
+    let date: Date
+}
+
+struct FifoResult {
+    let realizedProfitLoss: Double
+    let lifetimeInvested: Double
+    let lifetimeRetrieved: Double
+    let holdings: [HoldingLot]
+}
+
+struct HoldingLotINR: Identifiable {
+    let id = UUID()
+    let originalUnits: Double
+    let remainingUnits: Double
+    let buyPrice: Double // native buy price
+    let buyPriceINR: Double // buy price in INR using tx rate
+    let date: Date
+}
+
+struct FifoResultINR {
+    let realizedProfitLoss: Double
+    let lifetimeInvested: Double
+    let lifetimeRetrieved: Double
+    let holdings: [HoldingLotINR]
+}
+
+struct TransactionLedgerEntry {
+    let type: TransactionType
+    let units: Double
+    let date: Date
+    let createdAt: Date
+}
+
 struct FifoHoldingLot: Identifiable {
     let id = UUID()
     let purchaseDate: Date
@@ -319,7 +357,7 @@ struct FifoCalculator {
     }
     
     /// Calculate FIFO-based realized P/L and remaining holding lots.
-    static func calculate(transactions: [AssetTransaction]) -> LifoResult {
+    static func calculate(transactions: [AssetTransaction]) -> FifoResult {
         let sortedTx = orderedTransactions(transactions)
         
         var buyLots: [(originalUnits: Double, remainingUnits: Double, buyPrice: Double, date: Date)] = []
@@ -368,7 +406,7 @@ struct FifoCalculator {
             .filter { $0.remainingUnits > 0.000001 }
             .map { HoldingLot(originalUnits: $0.originalUnits, remainingUnits: $0.remainingUnits, buyPrice: $0.buyPrice, date: $0.date) }
         
-        return LifoResult(
+        return FifoResult(
             realizedProfitLoss: realizedPl,
             lifetimeInvested: lifetimeInvested,
             lifetimeRetrieved: lifetimeRetrieved,
@@ -377,7 +415,7 @@ struct FifoCalculator {
     }
     
     /// Calculate FIFO-based realized P/L and remaining holding lots in INR terms.
-    static func calculateInINR(transactions: [AssetTransaction], categoryExchangeRate: Double) -> LifoResultINR {
+    static func calculateInINR(transactions: [AssetTransaction], categoryExchangeRate: Double) -> FifoResultINR {
         let sortedTx = orderedTransactions(transactions)
         
         var buyLots: [(originalUnits: Double, remainingUnits: Double, buyPrice: Double, buyRate: Double, date: Date)] = []
@@ -434,12 +472,45 @@ struct FifoCalculator {
             .filter { $0.remainingUnits > 0.000001 }
             .map { HoldingLotINR(originalUnits: $0.originalUnits, remainingUnits: $0.remainingUnits, buyPrice: $0.buyPrice, buyPriceINR: $0.buyPrice * $0.buyRate, date: $0.date) }
         
-        return LifoResultINR(
+        return FifoResultINR(
             realizedProfitLoss: realizedPl,
             lifetimeInvested: lifetimeInvested,
             lifetimeRetrieved: lifetimeRetrieved,
             holdings: holdings
         )
+    }
+    
+    static func hasSufficientUnits(for transactions: [AssetTransaction]) -> Bool {
+        hasSufficientUnits(
+            entries: transactions.map {
+                TransactionLedgerEntry(
+                    type: $0.type,
+                    units: $0.units,
+                    date: $0.date,
+                    createdAt: $0.createdAt
+                )
+            }
+        )
+    }
+    
+    static func hasSufficientUnits(entries: [TransactionLedgerEntry]) -> Bool {
+        var runningUnits = 0.0
+        
+        for transaction in orderedEntries(entries) {
+            switch transaction.type {
+            case .buy:
+                runningUnits += transaction.units
+            case .sell:
+                guard transaction.units <= runningUnits + 0.000001 else {
+                    return false
+                }
+                runningUnits -= transaction.units
+            case .dividend:
+                break
+            }
+        }
+        
+        return true
     }
     
     static func realizedProfitLossBySellTransaction(transactions: [AssetTransaction]) -> [PersistentIdentifier: Double] {
@@ -523,6 +594,15 @@ struct FifoCalculator {
     
     private static func orderedTransactions(_ transactions: [AssetTransaction]) -> [AssetTransaction] {
         transactions.sorted {
+            if $0.date == $1.date {
+                return $0.createdAt < $1.createdAt
+            }
+            return $0.date < $1.date
+        }
+    }
+    
+    private static func orderedEntries(_ entries: [TransactionLedgerEntry]) -> [TransactionLedgerEntry] {
+        entries.sorted {
             if $0.date == $1.date {
                 return $0.createdAt < $1.createdAt
             }
