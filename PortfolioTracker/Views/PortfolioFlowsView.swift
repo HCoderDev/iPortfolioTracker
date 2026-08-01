@@ -34,7 +34,7 @@ struct PortfolioFlowsView: View {
     
     private var startingYear: Int {
         let txYears = transactions
-            .filter { $0.asset?.holdingType != .bankBalance && $0.asset?.holdingType != .fixedDeposit }
+            .filter { $0.asset?.holdingType.isNonUnitized == false }
             .map { Calendar.current.component(.year, from: $0.date) }
         return txYears.min() ?? Calendar.current.component(.year, from: Date())
     }
@@ -49,7 +49,7 @@ struct PortfolioFlowsView: View {
     // Available years based on transactions, fallback to recent years
     var availableYears: [Int] {
         let txYears = transactions
-            .filter { $0.asset?.holdingType != .bankBalance && $0.asset?.holdingType != .fixedDeposit }
+            .filter { $0.asset?.holdingType.isNonUnitized == false }
             .map { Calendar.current.component(.year, from: $0.date) }
         let currentYear = Calendar.current.component(.year, from: Date())
         var uniqueYears = Set(txYears)
@@ -160,8 +160,7 @@ struct PortfolioFlowsView: View {
             
             let categoryTx = transactions.filter { tx in
                 tx.asset?.category?.persistentModelID == category.persistentModelID &&
-                tx.asset?.holdingType != .bankBalance &&
-                tx.asset?.holdingType != .fixedDeposit
+                tx.asset?.holdingType.isNonUnitized == false
             }
             
             let assetsInCat = Dictionary(grouping: categoryTx.compactMap { $0.asset }, by: { $0.persistentModelID }).values.compactMap { $0.first }
@@ -279,8 +278,7 @@ struct PortfolioFlowsView: View {
             let yearTx = transactions.filter { tx in
                 calendar.component(.year, from: tx.date) == selectedYear &&
                 tx.asset?.category?.persistentModelID == category.persistentModelID &&
-                tx.asset?.holdingType != .bankBalance &&
-                tx.asset?.holdingType != .fixedDeposit
+                tx.asset?.holdingType.isNonUnitized == false
             }
             
             let assetsInCat = Dictionary(grouping: yearTx.compactMap { $0.asset }, by: { $0.persistentModelID }).values.compactMap { $0.first }
@@ -365,7 +363,7 @@ struct PortfolioFlowsView: View {
         
         // Filter transactions for chosen period
         let filteredTransactions = transactions.filter { tx in
-            if tx.asset?.holdingType == .bankBalance || tx.asset?.holdingType == .fixedDeposit {
+            if tx.asset?.holdingType.isNonUnitized == true {
                 return false
             }
             if selectedPeriodType == .lifetime {

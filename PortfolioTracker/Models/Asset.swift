@@ -32,13 +32,24 @@ enum HoldingType: String, CaseIterable, Identifiable, Codable {
     case investment = "investment"
     case bankBalance = "bankBalance"
     case fixedDeposit = "fixedDeposit"
+    case postOffice = "postOffice"
+    case epf = "epf"
+    case insuranceAnnuity = "insuranceAnnuity"
     
     var id: String { self.rawValue }
+    
+    var isNonUnitized: Bool {
+        self != .investment
+    }
+    
     var displayName: String {
         switch self {
-        case .investment: return "Investment (Stocks/MF)"
+        case .investment: return "Stocks / Mutual Funds"
         case .bankBalance: return "Bank Balance"
-        case .fixedDeposit: return "Fixed Deposit"
+        case .fixedDeposit: return "Fixed Deposit / RD"
+        case .postOffice: return "Post Office Scheme (PPF/NSC/MIS)"
+        case .epf: return "EPF / Provident Fund"
+        case .insuranceAnnuity: return "LIC / Insurance / Annuity"
         }
     }
 }
@@ -69,6 +80,24 @@ final class Asset {
     var taxAssetTypeRaw: String? = "equity"
     var taxCountryRaw: String? = nil
     var holdingTypeRaw: String? = "investment"
+    
+    // Metadata for non-unitized assets (FD, EPF, Post Office, LIC)
+    var interestRateRaw: Double? = nil
+    var principalAmountRaw: Double? = nil
+    var maturityDateRaw: Date? = nil
+    var payoutFrequencyRaw: String? = nil // "cumulative", "monthly", "quarterly", "annual"
+    var premiumAmountRaw: Double? = nil
+    var premiumTermYearsRaw: Int? = nil
+    var policyNumberRaw: String? = nil
+    var institutionNameRaw: String? = nil
+    
+    // Ticker / Symbol for Stock / MF / US Stock (optional)
+    var tickerRaw: String? = ""
+    
+    var ticker: String {
+        get { tickerRaw ?? "" }
+        set { tickerRaw = newValue.trimmingCharacters(in: .whitespacesAndNewlines) }
+    }
     
     // Alternate statement names / aliases for automatic import matching
     var aliasesRaw: String? = ""
@@ -130,10 +159,51 @@ final class Asset {
         }
     }
     
-    init(name: String, currentPrice: Double = 0.0, category: Category? = nil) {
+    var interestRate: Double {
+        get { interestRateRaw ?? 0.0 }
+        set { interestRateRaw = newValue }
+    }
+    
+    var principalAmount: Double {
+        get { principalAmountRaw ?? 0.0 }
+        set { principalAmountRaw = newValue }
+    }
+    
+    var maturityDate: Date? {
+        get { maturityDateRaw }
+        set { maturityDateRaw = newValue }
+    }
+    
+    var payoutFrequency: String {
+        get { payoutFrequencyRaw ?? "cumulative" }
+        set { payoutFrequencyRaw = newValue }
+    }
+    
+    var premiumAmount: Double {
+        get { premiumAmountRaw ?? 0.0 }
+        set { premiumAmountRaw = newValue }
+    }
+    
+    var premiumTermYears: Int {
+        get { premiumTermYearsRaw ?? 0 }
+        set { premiumTermYearsRaw = newValue }
+    }
+    
+    var policyNumber: String {
+        get { policyNumberRaw ?? "" }
+        set { policyNumberRaw = newValue.trimmingCharacters(in: .whitespacesAndNewlines) }
+    }
+    
+    var institutionName: String {
+        get { institutionNameRaw ?? "" }
+        set { institutionNameRaw = newValue.trimmingCharacters(in: .whitespacesAndNewlines) }
+    }
+    
+    init(name: String, currentPrice: Double = 0.0, category: Category? = nil, ticker: String? = "") {
         self.name = name
         self.currentPrice = currentPrice
         self.category = category
+        self.tickerRaw = ticker
         self.taxAssetTypeRaw = "equity"
         self.taxCountryRaw = nil
         self.holdingTypeRaw = "investment"

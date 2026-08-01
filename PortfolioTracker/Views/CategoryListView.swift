@@ -132,6 +132,16 @@ struct CategoryRow: View {
                         Text("Currency: \(category.currencyCode) · Target Alloc: \(category.targetAllocationPercent.formatted2)%")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                        
+                        if let updatedDate = category.lastUpdatedDate {
+                            HStack(spacing: 4) {
+                                Image(systemName: "clock.arrow.circlepath")
+                                    .font(.system(size: 10))
+                                Text("Data updated up to: \(updatedDate.formatted(date: .abbreviated, time: .shortened))")
+                                    .font(.system(size: 11, weight: .medium))
+                            }
+                            .foregroundStyle(AppTheme.accent)
+                        }
                     }
                     
                     Spacer()
@@ -177,6 +187,8 @@ struct CategoryFormSheet: View {
     @State private var name: String = ""
     @State private var selectedCurrencyCode: String = ""
     @State private var isIndividualEquity: Bool = false
+    @State private var hasUpdatedDate: Bool = false
+    @State private var lastUpdatedDate: Date = Date()
     
     private var defaultCurrency: Currency? {
         currencies.first(where: { $0.isDefault }) ?? currencies.first
@@ -199,6 +211,31 @@ struct CategoryFormSheet: View {
                     
                     Toggle("Is Individual Equity Category", isOn: $isIndividualEquity)
                         .tint(AppTheme.accent)
+                }
+                
+                Section("Data Freshness / Updated Up To") {
+                    Toggle("Track Last Updated Date", isOn: $hasUpdatedDate)
+                        .tint(AppTheme.accent)
+                    
+                    if hasUpdatedDate {
+                        DatePicker(
+                            "Data Updated Up To",
+                            selection: $lastUpdatedDate,
+                            displayedComponents: [.date, .hourAndMinute]
+                        )
+                        
+                        Button {
+                            lastUpdatedDate = Date()
+                        } label: {
+                            HStack {
+                                Image(systemName: "clock.arrow.circlepath")
+                                Text("Set to Current Date & Time Today")
+                            }
+                            .font(.caption.weight(.semibold))
+                        }
+                        .buttonStyle(.borderless)
+                        .tint(AppTheme.accent)
+                    }
                 }
                 
                 if category != nil {
@@ -228,9 +265,18 @@ struct CategoryFormSheet: View {
                     name = category.name
                     selectedCurrencyCode = category.currencyCode
                     isIndividualEquity = category.isIndividualEquity ?? false
+                    if let date = category.lastUpdatedDate {
+                        hasUpdatedDate = true
+                        lastUpdatedDate = date
+                    } else {
+                        hasUpdatedDate = false
+                        lastUpdatedDate = Date()
+                    }
                 } else {
                     selectedCurrencyCode = defaultCurrency?.code ?? ""
                     isIndividualEquity = false
+                    hasUpdatedDate = true
+                    lastUpdatedDate = Date()
                 }
             }
         }
@@ -240,12 +286,20 @@ struct CategoryFormSheet: View {
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
         guard !trimmedName.isEmpty, !selectedCurrencyCode.isEmpty else { return }
         
+        let finalUpdatedDate = hasUpdatedDate ? lastUpdatedDate : nil
+        
         if let category = category {
             category.name = trimmedName
             category.currencyCode = selectedCurrencyCode
             category.isIndividualEquity = isIndividualEquity
+            category.lastUpdatedDate = finalUpdatedDate
         } else {
-            let newCategory = Category(name: trimmedName, currencyCode: selectedCurrencyCode, isIndividualEquity: isIndividualEquity)
+            let newCategory = Category(
+                name: trimmedName,
+                currencyCode: selectedCurrencyCode,
+                isIndividualEquity: isIndividualEquity,
+                lastUpdatedDate: finalUpdatedDate
+            )
             modelContext.insert(newCategory)
         }
     }

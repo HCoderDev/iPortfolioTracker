@@ -207,7 +207,7 @@ struct PortfolioSnapshotsView: View {
                 let filteredTx = asset.transactions.filter { $0.date <= date }
                 
                 let units: Double
-                if asset.holdingType == .bankBalance || asset.holdingType == .fixedDeposit {
+                if asset.holdingType.isNonUnitized {
                     units = 1.0
                 } else {
                     units = filteredTx.reduce(0.0) { partialResult, transaction in
@@ -222,7 +222,7 @@ struct PortfolioSnapshotsView: View {
                 guard units > 0 else { continue }
                 
                 let invested: Double
-                if asset.holdingType == .bankBalance || asset.holdingType == .fixedDeposit {
+                if asset.holdingType.isNonUnitized {
                     let totalInterest = filteredTx.filter { $0.type == .dividend }.reduce(0.0) { $0 + $1.pricePerUnit }
                     invested = max(0, asset.currentPrice - totalInterest)
                 } else {
@@ -231,9 +231,9 @@ struct PortfolioSnapshotsView: View {
                     }
                 }
                 
-                let currentValue = (asset.holdingType == .bankBalance || asset.holdingType == .fixedDeposit) ? asset.currentPrice : (units * asset.currentPrice)
+                let currentValue = asset.holdingType.isNonUnitized ? asset.currentPrice : (units * asset.currentPrice)
                 
-                let investedINR = (asset.holdingType == .bankBalance || asset.holdingType == .fixedDeposit) ? {
+                let investedINR = asset.holdingType.isNonUnitized ? {
                     let totalInterest = filteredTx.filter { $0.type == .dividend }.reduce(0.0) { sum, tx in
                         let txRate = tx.inrExchangeRate ?? rate
                         return sum + (tx.pricePerUnit * txRate)
@@ -329,7 +329,7 @@ struct TakeSnapshotSheet: View {
                 let filteredTx = asset.transactions.filter { $0.date <= snapshotDate }
                 
                 let units: Double
-                if asset.holdingType == .bankBalance || asset.holdingType == .fixedDeposit {
+                if asset.holdingType.isNonUnitized {
                     units = 1.0
                 } else {
                     units = filteredTx.reduce(0.0) { partialResult, transaction in
@@ -344,7 +344,7 @@ struct TakeSnapshotSheet: View {
                 guard units > 0 else { continue }
                 
                 let invested: Double
-                if asset.holdingType == .bankBalance || asset.holdingType == .fixedDeposit {
+                if asset.holdingType.isNonUnitized {
                     let totalInterest = filteredTx.filter { $0.type == .dividend }.reduce(0.0) { sum, tx in
                         let txRate = tx.inrExchangeRate ?? rate
                         return sum + (tx.pricePerUnit * txRate)
@@ -357,11 +357,11 @@ struct TakeSnapshotSheet: View {
                     }
                 }
                 
-                let currentValue = (asset.holdingType == .bankBalance || asset.holdingType == .fixedDeposit) ? asset.currentPrice : (units * asset.currentPrice)
+                let currentValue = asset.holdingType.isNonUnitized ? asset.currentPrice : (units * asset.currentPrice)
                 let currentValueINR = currentValue * rate
                 
                 overallCurrentValueINR += currentValueINR
-                overallInvestedINR += (asset.holdingType == .bankBalance || asset.holdingType == .fixedDeposit) ? invested : invested
+                overallInvestedINR += invested
             }
         }
         

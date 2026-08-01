@@ -539,7 +539,8 @@ struct BulkCMPImportSheet: View {
                 
                 // 1. Ticker match
                 if !rowTicker.isEmpty {
-                    if dbAsset.name.localizedCaseInsensitiveContains(rowTicker) ||
+                    if (!dbAsset.ticker.isEmpty && dbAsset.ticker.localizedCaseInsensitiveCompare(rowTicker) == .orderedSame) ||
+                       dbAsset.name.localizedCaseInsensitiveContains(rowTicker) ||
                        dbAsset.aliases.contains(where: { $0.localizedCaseInsensitiveCompare(rowTicker) == .orderedSame }) {
                         return true
                     }

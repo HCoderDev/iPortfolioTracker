@@ -21,6 +21,8 @@ struct CategoryDetailView: View {
     @State private var assetToEdit: Asset?
     @State private var showImportSheet = false
     @State private var importMode: ImportMode = .transactions
+    @State private var showUpdateDatePicker = false
+    @State private var customDateInput = Date()
     
     private var assetsBySubCategory: [(subCategory: SubCategory?, assets: [Asset])] {
         let active = filteredActiveAssets
@@ -166,6 +168,71 @@ struct CategoryDetailView: View {
             LazyVStack(spacing: 16) {
                 // Summary Card
                 summaryCard(data: data)
+                
+                // Data Freshness / Last Updated Card
+                HStack(spacing: 12) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.title3)
+                        .foregroundStyle(AppTheme.accent)
+                        .frame(width: 36, height: 36)
+                        .background(AppTheme.accent.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("DATA UPDATED UP TO")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.secondary)
+                        
+                        if let updatedDate = category.lastUpdatedDate {
+                            Text(updatedDate.formatted(date: .abbreviated, time: .shortened))
+                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                                .foregroundStyle(.primary)
+                        } else {
+                            Text("Not set yet")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    Menu {
+                        Button {
+                            category.lastUpdatedDate = Date()
+                        } label: {
+                            Label("Mark Updated Today", systemImage: "checkmark.circle.fill")
+                        }
+                        
+                        Button {
+                            customDateInput = category.lastUpdatedDate ?? Date()
+                            showUpdateDatePicker = true
+                        } label: {
+                            Label("Choose Specific Date...", systemImage: "calendar")
+                        }
+                        
+                        if category.lastUpdatedDate != nil {
+                            Button(role: .destructive) {
+                                category.lastUpdatedDate = nil
+                            } label: {
+                                Label("Clear Updated Date", systemImage: "xmark.circle")
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text("Update Date")
+                                .font(.caption.weight(.semibold))
+                            Image(systemName: "chevron.down")
+                                .font(.caption2)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(AppTheme.accent.opacity(0.12))
+                        .foregroundStyle(AppTheme.accent)
+                        .clipShape(Capsule())
+                    }
+                }
+                .padding(14)
+                .modifier(AppTheme.cardStyle())
                 
                 // Convert to INR Card
                 if category.currencyCode != "INR" {
@@ -448,6 +515,42 @@ struct CategoryDetailView: View {
         .sheet(isPresented: $showImportSheet) {
             FileImportWizardView(initialCategory: category, initialMode: importMode)
         }
+        .sheet(isPresented: $showUpdateDatePicker) {
+            NavigationStack {
+                Form {
+                    Section("Select Data Updated Date") {
+                        DatePicker(
+                            "Updated Up To",
+                            selection: $customDateInput,
+                            displayedComponents: [.date, .hourAndMinute]
+                        )
+                        
+                        Button {
+                            customDateInput = Date()
+                        } label: {
+                            HStack {
+                                Image(systemName: "clock.arrow.circlepath")
+                                Text("Set to Current Date & Time")
+                            }
+                            .font(.caption.weight(.semibold))
+                        }
+                    }
+                }
+                .navigationTitle("Update Category Date")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { showUpdateDatePicker = false }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save") {
+                            category.lastUpdatedDate = customDateInput
+                            showUpdateDatePicker = false
+                        }
+                    }
+                }
+            }
+        }
     }
     
     // MARK: - Summary Card
@@ -641,9 +744,18 @@ struct CategoryAssetCardView: View {
     var body: some View {
         VStack(spacing: 8) {
             HStack {
-                Text(asset.name)
-                    .font(.headline)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(asset.name)
+                        .font(.headline)
+                    if !asset.institutionName.isEmpty {
+                        Text(asset.institutionName)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                
                 Spacer()
+                
                 Text("\(currencySymbol)\(currentValue.formattedComma)")
                     .font(.headline)
                     .foregroundStyle(AppTheme.accent)
@@ -657,113 +769,246 @@ struct CategoryAssetCardView: View {
                 .buttonStyle(.plain)
             }
             
-            HStack {
-                Text("Units: \(totalUnits.formatted2)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text("Invested: \(currencySymbol)\(invested.formattedComma)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            
-            HStack {
-                Text("CMP: \(currencySymbol)\(cmp.formatted2)")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text("G/L: \(currencySymbol)\(gainLoss.formattedComma)")
-                    .font(.subheadline)
-                    .fontWeight(.bold)
-                    .foregroundStyle(gainLoss >= 0 ? AppTheme.profit : AppTheme.loss)
-            }
-            
-            let txCounts = PortfolioMetrics.transactionCounts(for: asset.transactions)
-            HStack {
-                Text("Trades: \(txCounts.buyCount) Buy · \(txCounts.sellCount) Sell")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text(txCounts.sellCount == 0 ? "100% Held" : String(format: "%.0f%% Buy", txCounts.buyPercentage))
-                    .font(.system(size: 8, weight: .bold))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(txCounts.sellCount == 0 ? AppTheme.profit.opacity(0.15) : Color.orange.opacity(0.15))
-                    .foregroundStyle(txCounts.sellCount == 0 ? AppTheme.profit : Color.orange)
-                    .clipShape(Capsule())
-            }
-            
-            if isIndividualEquity {
-                if let analysis = asset.valueAnalysis {
-                    Divider()
-                        .padding(.vertical, 4)
-                    
-                    HStack {
-                        // Intrinsic value
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("INTRINSIC VALUE")
-                                .font(.system(size: 8, weight: .bold))
-                                .foregroundStyle(.secondary)
-                            let ivConverted = isConversionActive ? analysis.intrinsicValue * rate : analysis.intrinsicValue
-                            Text("\(currencySymbol)\(ivConverted.formatted2)")
-                                .font(.subheadline)
-                                .fontWeight(.bold)
-                        }
-                        
-                        Spacer()
-                        
-                        // Projected CAGR
-                        VStack(alignment: .center, spacing: 2) {
-                            Text("PROJ. CAGR")
-                                .font(.system(size: 8, weight: .bold))
-                                .foregroundStyle(.secondary)
-                            Text(String(format: "%.2f%%", analysis.overallProjectedCAGR * 100.0))
-                                .font(.subheadline)
-                                .fontWeight(.bold)
-                                .foregroundStyle(analysis.overallProjectedCAGR >= 0.15 ? AppTheme.profit : AppTheme.accent)
-                        }
-                        
-                        Spacer()
-                        
-                        // Undervalued / Overvalued Badge
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text(analysis.isUndervalued ? "UNDERVALUED" : "OVERVALUED")
-                                .font(.system(size: 8, weight: .black))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background((analysis.isUndervalued ? AppTheme.profit : AppTheme.loss).opacity(0.15))
-                                .foregroundStyle(analysis.isUndervalued ? AppTheme.profit : AppTheme.loss)
-                                .clipShape(Capsule())
-                            
-                            let margin = analysis.valuationMarginPercent * 100
-                            Text(String(format: "%@%.1f%% Margin", margin >= 0 ? "+" : "", margin))
-                                .font(.system(size: 8, weight: .bold))
-                                .foregroundStyle(margin >= 0 ? AppTheme.profit : AppTheme.loss)
-                        }
-                    }
-                } else {
-                    Divider()
-                        .padding(.vertical, 4)
-                    
-                    HStack {
-                        Label("No Stock Analysis", systemImage: "chart.line.uptrend.xyaxis")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Text("Tap to add")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(AppTheme.accent)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 2)
-                            .background(AppTheme.accent.opacity(0.1))
-                            .clipShape(Capsule())
-                    }
-                }
+            if asset.holdingType.isNonUnitized {
+                nonUnitizedCardDetails
+            } else {
+                unitizedCardDetails
             }
         }
         .padding(16)
         .background(Color(.systemGray6))
         .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+    
+    @ViewBuilder
+    private var nonUnitizedCardDetails: some View {
+        switch asset.holdingType {
+        case .bankBalance:
+            HStack {
+                Label("Bank Balance", systemImage: "building.columns.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("Liquid Cash")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(AppTheme.profit)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(AppTheme.profit.opacity(0.12))
+                    .clipShape(Capsule())
+            }
+            
+        case .fixedDeposit:
+            VStack(spacing: 4) {
+                HStack {
+                    Text("Principal: \(currencySymbol)\((asset.principalAmount > 0 ? asset.principalAmount : currentValue).formattedComma)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if asset.interestRate > 0 {
+                        Text("Rate: \(asset.interestRate.formatted2)% p.a.")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(AppTheme.accent)
+                    }
+                }
+                HStack {
+                    if let mDate = asset.maturityDate {
+                        Text("Matures: \(mDate.formatted(date: .abbreviated, time: .omitted))")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("Payout: \(asset.payoutFrequency.capitalized)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if asset.payoutFrequency != "cumulative" {
+                        Text("\(asset.payoutFrequency.capitalized) Payout")
+                            .font(.system(size: 9, weight: .bold))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.blue.opacity(0.12))
+                            .foregroundStyle(Color.blue)
+                            .clipShape(Capsule())
+                    }
+                }
+            }
+            
+        case .postOffice:
+            VStack(spacing: 4) {
+                HStack {
+                    Text("Post Office Scheme")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if asset.interestRate > 0 {
+                        Text("Rate: \(asset.interestRate.formatted2)%")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(AppTheme.accent)
+                    }
+                }
+                if let mDate = asset.maturityDate {
+                    HStack {
+                        Text("Maturity: \(mDate.formatted(date: .abbreviated, time: .omitted))")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                }
+            }
+            
+        case .epf:
+            HStack {
+                Text("Accumulated EPF/PF Balance")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if asset.interestRate > 0 {
+                    Text("Interest: \(asset.interestRate.formatted2)% p.a.")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(AppTheme.accent)
+                }
+            }
+            
+        case .insuranceAnnuity:
+            VStack(spacing: 4) {
+                HStack {
+                    if !asset.policyNumber.isEmpty {
+                        Text("Policy #: \(asset.policyNumber)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("LIC / Annuity Policy")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if asset.premiumAmount > 0 {
+                        Text("Premium: \(currencySymbol)\(asset.premiumAmount.formattedComma)/yr")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(AppTheme.accent)
+                    }
+                }
+                if asset.premiumTermYears > 0 {
+                    HStack {
+                        Text("Payment Term: \(asset.premiumTermYears) Years")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                }
+            }
+            
+        case .investment:
+            EmptyView()
+        }
+    }
+    
+    @ViewBuilder
+    private var unitizedCardDetails: some View {
+        HStack {
+            Text("Units: \(totalUnits.formatted2)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text("Invested: \(currencySymbol)\(invested.formattedComma)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        
+        HStack {
+            Text("CMP: \(currencySymbol)\(cmp.formatted2)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text("G/L: \(currencySymbol)\(gainLoss.formattedComma)")
+                .font(.subheadline)
+                .fontWeight(.bold)
+                .foregroundStyle(gainLoss >= 0 ? AppTheme.profit : AppTheme.loss)
+        }
+        
+        let txCounts = PortfolioMetrics.transactionCounts(for: asset.transactions)
+        HStack {
+            Text("Trades: \(txCounts.buyCount) Buy · \(txCounts.sellCount) Sell")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(txCounts.sellCount == 0 ? "100% Held" : String(format: "%.0f%% Buy", txCounts.buyPercentage))
+                .font(.system(size: 8, weight: .bold))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(txCounts.sellCount == 0 ? AppTheme.profit.opacity(0.15) : Color.orange.opacity(0.15))
+                .foregroundStyle(txCounts.sellCount == 0 ? AppTheme.profit : Color.orange)
+                .clipShape(Capsule())
+        }
+        
+        if isIndividualEquity {
+            if let analysis = asset.valueAnalysis {
+                Divider()
+                    .padding(.vertical, 4)
+                
+                HStack {
+                    // Intrinsic value
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("INTRINSIC VALUE")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(.secondary)
+                        let ivConverted = isConversionActive ? analysis.intrinsicValue * rate : analysis.intrinsicValue
+                        Text("\(currencySymbol)\(ivConverted.formatted2)")
+                            .font(.subheadline)
+                            .fontWeight(.bold)
+                    }
+                    
+                    Spacer()
+                    
+                    // Projected CAGR
+                    VStack(alignment: .center, spacing: 2) {
+                        Text("PROJ. CAGR")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(.secondary)
+                        Text(String(format: "%.2f%%", analysis.overallProjectedCAGR * 100.0))
+                            .font(.subheadline)
+                            .fontWeight(.bold)
+                            .foregroundStyle(analysis.overallProjectedCAGR >= 0.15 ? AppTheme.profit : AppTheme.accent)
+                    }
+                    
+                    Spacer()
+                    
+                    // Undervalued / Overvalued Badge
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(analysis.isUndervalued ? "UNDERVALUED" : "OVERVALUED")
+                            .font(.system(size: 8, weight: .black))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background((analysis.isUndervalued ? AppTheme.profit : AppTheme.loss).opacity(0.15))
+                            .foregroundStyle(analysis.isUndervalued ? AppTheme.profit : AppTheme.loss)
+                            .clipShape(Capsule())
+                        
+                        let margin = analysis.valuationMarginPercent * 100
+                        Text(String(format: "%@%.1f%% Margin", margin >= 0 ? "+" : "", margin))
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(margin >= 0 ? AppTheme.profit : AppTheme.loss)
+                    }
+                }
+            } else {
+                Divider()
+                    .padding(.vertical, 4)
+                
+                HStack {
+                    Label("No Stock Analysis", systemImage: "chart.line.uptrend.xyaxis")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text("Tap to add")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(AppTheme.accent)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(AppTheme.accent.opacity(0.1))
+                        .clipShape(Capsule())
+                }
+            }
+        }
     }
 }
 

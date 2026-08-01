@@ -176,7 +176,7 @@ struct ExportCSVView: View {
         let fileName = "All_Portfolio_Transactions.csv"
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
         
-        var csvContent = "Asset Name,Category,Currency,Transaction Type,Date,Units,Price Per Unit,Total Amount (Native),INR Exchange Rate,Total Amount (INR)\n"
+        var csvContent = "Asset Name,Ticker,Category,Currency,Transaction Type,Date,Units,Price Per Unit,Total Amount (Native),INR Exchange Rate,Total Amount (INR)\n"
         
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
@@ -185,6 +185,7 @@ struct ExportCSVView: View {
         
         for tx in sortedAll {
             let assetName = tx.asset?.name ?? "Unknown"
+            let ticker = tx.asset?.ticker ?? ""
             let catName = tx.asset?.category?.name ?? ""
             let currencyCode = tx.asset?.category?.currencyCode ?? "USD"
             let rate = tx.inrExchangeRate ?? (tx.asset?.category?.lastInrExchangeRate ?? 1.0)
@@ -192,7 +193,7 @@ struct ExportCSVView: View {
             let amountNative = tx.units * tx.pricePerUnit
             let amountINR = amountNative * rate
             
-            let line = "\"\(assetName)\",\"\(catName)\",\"\(currencyCode)\",\"\(tx.type.rawValue)\",\"\(dateFormatter.string(from: tx.date))\",\(tx.units.formatted2),\(tx.pricePerUnit.formatted2),\(amountNative.formatted2),\(rate.formatted2),\(amountINR.formatted2)\n"
+            let line = "\"\(assetName)\",\"\(ticker)\",\"\(catName)\",\"\(currencyCode)\",\"\(tx.type.rawValue)\",\"\(dateFormatter.string(from: tx.date))\",\(tx.units.formatted2),\(tx.pricePerUnit.formatted2),\(amountNative.formatted2),\(rate.formatted2),\(amountINR.formatted2)\n"
             csvContent.append(line)
         }
         
@@ -210,7 +211,7 @@ struct ExportCSVView: View {
         let fileName = "\(safeName)_transactions.csv"
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
         
-        var csvContent = "Asset Name,Category,Currency,Transaction Type,Date,Units,Price Per Unit,Total Amount (Native),INR Exchange Rate,Total Amount (INR)\n"
+        var csvContent = "Asset Name,Ticker,Category,Currency,Transaction Type,Date,Units,Price Per Unit,Total Amount (Native),INR Exchange Rate,Total Amount (INR)\n"
         
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
@@ -219,13 +220,14 @@ struct ExportCSVView: View {
         let catName = asset.category?.name ?? ""
         let currencyCode = asset.category?.currencyCode ?? "USD"
         let rateFallback = asset.category?.lastInrExchangeRate ?? 1.0
+        let ticker = asset.ticker
         
         for tx in sortedTx {
             let txRate = tx.inrExchangeRate ?? rateFallback
             let amountNative = tx.units * tx.pricePerUnit
             let amountINR = amountNative * txRate
             
-            let line = "\"\(asset.name)\",\"\(catName)\",\"\(currencyCode)\",\"\(tx.type.rawValue)\",\"\(dateFormatter.string(from: tx.date))\",\(tx.units.formatted2),\(tx.pricePerUnit.formatted2),\(amountNative.formatted2),\(txRate.formatted2),\(amountINR.formatted2)\n"
+            let line = "\"\(asset.name)\",\"\(ticker)\",\"\(catName)\",\"\(currencyCode)\",\"\(tx.type.rawValue)\",\"\(dateFormatter.string(from: tx.date))\",\(tx.units.formatted2),\(tx.pricePerUnit.formatted2),\(amountNative.formatted2),\(txRate.formatted2),\(amountINR.formatted2)\n"
             csvContent.append(line)
         }
         

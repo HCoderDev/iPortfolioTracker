@@ -51,20 +51,30 @@ enum PortfolioMetrics {
     }
     
     static func totalUnits(for asset: Asset) -> Double {
-        if asset.holdingType == .bankBalance || asset.holdingType == .fixedDeposit {
+        if asset.holdingType.isNonUnitized {
             return 1.0
         }
         return totalUnits(for: asset.transactions)
     }
 
     static func isSoldOff(_ asset: Asset) -> Bool {
+        if asset.holdingType.isNonUnitized {
+            return false
+        }
         let remainingUnits = totalUnits(for: asset)
         return abs(remainingUnits) <= 0.000001 && asset.transactions.contains(where: { $0.type == .buy })
     }
     
     static func investedValue(for asset: Asset) -> Double {
-        if asset.holdingType == .bankBalance || asset.holdingType == .fixedDeposit {
-            let totalInterest = asset.transactions.filter { $0.type == .dividend }.reduce(0.0) { $0 + $1.pricePerUnit }
+        if asset.holdingType.isNonUnitized {
+            if asset.principalAmount > 0 {
+                let buyTotal = asset.transactions.filter { $0.type == .buy }.reduce(0.0) { $0 + ($1.units * $1.pricePerUnit) }
+                return buyTotal > 0 ? buyTotal : asset.principalAmount
+            } else if asset.premiumAmount > 0 && asset.premiumTermYears > 0 {
+                let buyTotal = asset.transactions.filter { $0.type == .buy }.reduce(0.0) { $0 + ($1.units * $1.pricePerUnit) }
+                return buyTotal > 0 ? buyTotal : asset.premiumAmount
+            }
+            let totalInterest = asset.transactions.filter { $0.type == .dividend }.reduce(0.0) { $0 + ($1.units * $1.pricePerUnit) }
             return max(0, asset.currentPrice - totalInterest)
         }
         return FifoCalculator.calculate(transactions: asset.transactions).holdings.reduce(0.0) { partialResult, lot in
@@ -81,7 +91,7 @@ enum PortfolioMetrics {
     }
     
     static func currentValue(for asset: Asset) -> Double {
-        if asset.holdingType == .bankBalance || asset.holdingType == .fixedDeposit {
+        if asset.holdingType.isNonUnitized {
             return asset.currentPrice
         }
         return totalUnits(for: asset) * asset.currentPrice
@@ -170,13 +180,9 @@ enum PortfolioMetrics {
     }
     
     static func investedValueInINR(for asset: Asset, rate: Double) -> Double {
-        if asset.holdingType == .bankBalance || asset.holdingType == .fixedDeposit {
-            let totalInterest = asset.transactions.filter { $0.type == .dividend }.reduce(0.0) { sum, tx in
-                let txRate = tx.inrExchangeRate ?? rate
-                return sum + (tx.pricePerUnit * txRate)
-            }
-            let currentValueInINR = asset.currentPrice * rate
-            return max(0, currentValueInINR - totalInterest)
+        if asset.holdingType.isNonUnitized {
+            let invLocal = investedValue(for: asset)
+            return invLocal * rate
         }
         return FifoCalculator.calculateInINR(transactions: asset.transactions, categoryExchangeRate: rate).holdings.reduce(0.0) { partialResult, lot in
             partialResult + lot.remainingUnits * lot.buyPriceINR
@@ -192,7 +198,7 @@ enum PortfolioMetrics {
     }
     
     static func currentValueInINR(for asset: Asset, rate: Double) -> Double {
-        if asset.holdingType == .bankBalance || asset.holdingType == .fixedDeposit {
+        if asset.holdingType.isNonUnitized {
             return asset.currentPrice * rate
         }
         return totalUnits(for: asset) * asset.currentPrice * rate

@@ -188,6 +188,9 @@ struct DashboardView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .modifier(AppTheme.cardStyle())
                 
+                // Financial Independence Tracker Card
+                FICalculationCard(currentNetWorth: data.totalValue)
+                
                 // Allocation Card (Pie Chart & Category Breakdown)
                 if !data.categoryAllocations.isEmpty {
                     VStack(alignment: .leading, spacing: 14) {

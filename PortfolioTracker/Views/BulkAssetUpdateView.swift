@@ -481,13 +481,15 @@ struct BulkAssetUpdateView: View {
         
         for asset in activeAssets {
             let cleanName = asset.name.replacingOccurrences(of: "\"", with: "\"\"")
+            let cleanTicker = asset.ticker.replacingOccurrences(of: "\"", with: "\"\"")
             let name = "\"\(cleanName)\""
+            let ticker = "\"\(cleanTicker)\""
             let category = "\"\(asset.category?.name ?? "General")\""
             let currency = "\"\(asset.category?.currencyCode ?? "INR")\""
             let cmp = String(format: "%.2f", asset.currentPrice)
             let units = String(format: "%.4f", PortfolioMetrics.totalUnits(for: asset))
             
-            csv += "\(name),,\(category),\(currency),\(cmp),\(units)\n"
+            csv += "\(name),\(ticker),\(category),\(currency),\(cmp),\(units)\n"
         }
         return csv
     }
@@ -516,10 +518,16 @@ struct BulkAssetUpdateView: View {
     }
     
     private func saveAll() {
+        var updatedCategories = Set<PersistentIdentifier>()
         for asset in assets {
             if let input = priceInputs[asset.persistentModelID],
-               let newPrice = Double(input) {
+               let newPrice = Double(input),
+               abs(newPrice - asset.currentPrice) > 0.000001 {
                 asset.currentPrice = newPrice
+                if let cat = asset.category {
+                    updatedCategories.insert(cat.persistentModelID)
+                    cat.lastUpdatedDate = Date()
+                }
             }
         }
         

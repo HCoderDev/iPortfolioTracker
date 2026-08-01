@@ -10,6 +10,7 @@ struct AppTheme {
     static let accent = Color(hex: "0A84FF")         // System Blue / Indigo
     static let accentSecondary = Color(hex: "5E5CE6") // Purple Accent
     static let profit = Color(hex: "30D158")          // Apple Stocks Green
+    static let gain = Color(hex: "30D158")            // Apple Stocks Green Alias
     static let loss = Color(hex: "FF453A")            // Apple Stocks Red
     static let warning = Color(hex: "FF9F0A")         // System Amber
     
@@ -140,6 +141,10 @@ extension Color {
 
 // MARK: - Formatting Helpers
 extension Double {
+    var formatted1: String {
+        String(format: "%.1f", self)
+    }
+    
     var formatted2: String {
         String(format: "%.2f", self)
     }

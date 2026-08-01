@@ -319,7 +319,7 @@ struct FifoCalculator {
         
         // Construct Active Lots
         let activeLots: [FifoHoldingLot]
-        if asset.holdingType == .bankBalance || asset.holdingType == .fixedDeposit {
+        if asset.holdingType.isNonUnitized {
             activeLots = []
         } else {
             activeLots = buyLots

@@ -14,6 +14,7 @@ final class Category {
     var convertToInr: Bool?
     var isIndividualEquity: Bool? = false
     var targetAllocation: Double? = 0.0
+    var lastUpdatedDate: Date? = nil
     
     var targetAllocationPercent: Double {
         get { targetAllocation ?? 0.0 }
@@ -37,7 +38,8 @@ final class Category {
         lastInrExchangeRate: Double? = nil,
         convertToInr: Bool? = true,
         isIndividualEquity: Bool? = false,
-        targetAllocation: Double? = 0.0
+        targetAllocation: Double? = 0.0,
+        lastUpdatedDate: Date? = nil
     ) {
         self.name = name
         self.currencyCode = currencyCode
@@ -45,5 +47,6 @@ final class Category {
         self.convertToInr = convertToInr
         self.isIndividualEquity = isIndividualEquity
         self.targetAllocation = targetAllocation
+        self.lastUpdatedDate = lastUpdatedDate
     }
 }

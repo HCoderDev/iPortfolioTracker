@@ -310,7 +310,7 @@ struct AssetDetailView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            if asset.holdingType != .bankBalance && asset.holdingType != .fixedDeposit {
+            if !asset.holdingType.isNonUnitized {
                 Picker("View Mode", selection: $selectedViewTab) {
                     ForEach(ViewTab.allCases) { tab in
                         Text(tab.rawValue).tag(tab)
@@ -334,7 +334,7 @@ struct AssetDetailView: View {
             
             ScrollView {
                 LazyVStack(spacing: 16) {
-                    if selectedViewTab == .overview || asset.holdingType == .bankBalance || asset.holdingType == .fixedDeposit {
+                    if selectedViewTab == .overview || asset.holdingType.isNonUnitized {
                         // Summary Card
                         summaryCard
                         
@@ -448,7 +448,7 @@ struct AssetDetailView: View {
                 StockValueAnalysisDetailSheet(analysis: analysis)
             }
         }
-        .alert(asset.holdingType == .investment ? "Update Current Price" : "Update Current Balance", isPresented: $showUpdatePriceAlert) {
+        .alert(asset.holdingType.isNonUnitized ? "Update Current Balance" : "Update Current Price", isPresented: $showUpdatePriceAlert) {
             TextField("Price", text: $priceInput)
                 .keyboardType(.decimalPad)
             Button("Cancel", role: .cancel) {}
@@ -475,8 +475,20 @@ struct AssetDetailView: View {
         VStack(spacing: 14) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Asset Overview")
-                        .font(.title3.weight(.bold))
+                    HStack(spacing: 6) {
+                        Text(asset.name)
+                            .font(.title3.weight(.bold))
+                        
+                        if !asset.ticker.isEmpty {
+                            Text(asset.ticker.uppercased())
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(AppTheme.accent)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(AppTheme.accent.opacity(0.12))
+                                .clipShape(Capsule())
+                        }
+                    }
                     Text("Performance & valuation summary")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -497,23 +509,52 @@ struct AssetDetailView: View {
             Divider()
                        HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 4) {
-                    if asset.holdingType == .investment {
+                    if asset.holdingType.isNonUnitized {
+                        if asset.holdingType == .fixedDeposit || asset.holdingType == .postOffice {
+                            if asset.principalAmount > 0 {
+                                Text("Principal Amount: \(currencySymbol)\(asset.principalAmount.formattedComma)")
+                                    .font(.system(size: 13, weight: .medium))
+                            }
+                            if asset.interestRate > 0 {
+                                Text("Interest Rate: \(asset.interestRate.formatted2)% p.a. (\(asset.payoutFrequency.capitalized))")
+                                    .font(.system(size: 13))
+                            }
+                            if let mDate = asset.maturityDate {
+                                Text("Maturity Date: \(mDate.formatted(date: .abbreviated, time: .omitted))")
+                                    .font(.system(size: 13))
+                            }
+                        } else if asset.holdingType == .insuranceAnnuity {
+                            if asset.premiumAmount > 0 {
+                                Text("Annual Premium: \(currencySymbol)\(asset.premiumAmount.formattedComma)")
+                                    .font(.system(size: 13, weight: .medium))
+                            }
+                            if asset.premiumTermYears > 0 {
+                                Text("Payment Term: \(asset.premiumTermYears) Years")
+                                    .font(.system(size: 13))
+                            }
+                            if !asset.policyNumber.isEmpty {
+                                Text("Policy #: \(asset.policyNumber)")
+                                    .font(.system(size: 13))
+                            }
+                        } else if asset.holdingType == .epf {
+                            if asset.interestRate > 0 {
+                                Text("EPF Interest Rate: \(asset.interestRate.formatted2)% p.a.")
+                                    .font(.system(size: 13, weight: .medium))
+                            }
+                        }
+                    } else {
                         Text("Total Units: \(totalUnits.formatted2)")
                             .font(.system(size: 13, weight: .medium))
                             .monospacedDigit()
                         Text("Avg Buy Price: \(currencySymbol)\(activeAverageBuyPrice.formatted2)")
                             .font(.system(size: 13, weight: .regular))
                             .monospacedDigit()
-                    } else {
-                        Text("Principal Deposit: \(currencySymbol)\(activeAverageBuyPrice.formatted2)")
-                            .font(.system(size: 13, weight: .medium))
-                            .monospacedDigit()
                     }
                 }
                 
                 Spacer()
                 
-                if asset.holdingType == .investment {
+                if !asset.holdingType.isNonUnitized {
                     VStack(alignment: .trailing, spacing: 4) {
                         Text("Holding Duration")
                             .font(.caption)

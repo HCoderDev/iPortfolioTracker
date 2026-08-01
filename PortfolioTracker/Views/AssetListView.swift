@@ -180,22 +180,76 @@ struct AssetRow: View {
 struct AssetRowContent: View {
     let asset: Asset
     
-    private var totalUnits: Double {
-        PortfolioMetrics.totalUnits(for: asset)
-    }
-    
     private var currentValue: Double {
         PortfolioMetrics.currentValue(for: asset)
     }
     
+    private var subtitleText: String {
+        switch asset.holdingType {
+        case .investment:
+            let units = PortfolioMetrics.totalUnits(for: asset)
+            return "Units: \(units.formatted2) · Value: \(currentValue.formattedComma)"
+        case .bankBalance:
+            return "Current Balance: \(currentValue.formattedComma)"
+        case .fixedDeposit:
+            var text = "Principal: \((asset.principalAmount > 0 ? asset.principalAmount : currentValue).formattedComma)"
+            if asset.interestRate > 0 {
+                text += " · \(asset.interestRate.formatted2)%"
+            }
+            if asset.payoutFrequency != "cumulative" {
+                text += " (\(asset.payoutFrequency.capitalized) Payout)"
+            }
+            return text
+        case .postOffice:
+            var text = "Current Value: \(currentValue.formattedComma)"
+            if asset.interestRate > 0 {
+                text += " · \(asset.interestRate.formatted2)%"
+            }
+            return text
+        case .epf:
+            var text = "Accumulated Balance: \(currentValue.formattedComma)"
+            if asset.interestRate > 0 {
+                text += " · \(asset.interestRate.formatted2)%"
+            }
+            return text
+        case .insuranceAnnuity:
+            var text = "Policy Value: \(currentValue.formattedComma)"
+            if asset.premiumAmount > 0 {
+                text += " · Premium: \(asset.premiumAmount.formattedComma)/yr"
+            }
+            return text
+        }
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(asset.name)
-                .font(.headline)
+            HStack(spacing: 6) {
+                Text(asset.name)
+                    .font(.headline)
+                
+                if !asset.ticker.isEmpty {
+                    Text(asset.ticker.uppercased())
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(AppTheme.accent)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(AppTheme.accent.opacity(0.12))
+                        .clipShape(Capsule())
+                }
+                
+                Text(asset.holdingType.displayName)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.secondary.opacity(0.12))
+                    .clipShape(Capsule())
+            }
+            
             Text("Category: \(asset.category?.name ?? "Uncategorized")")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Text("Units: \(totalUnits.formatted2) · Value: \(currentValue.formattedComma)")
+            Text(subtitleText)
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -219,18 +273,28 @@ struct AssetFormSheet: View {
     }
     
     @State private var name: String = ""
+    @State private var ticker: String = ""
     @State private var selectedCategory: Category?
     @State private var selectedSubCategory: SubCategory?
     @State private var selectedHoldingType: HoldingType = .investment
-    @State private var initialBalance: String = ""
+    
+    // Dynamic fields per holding type
+    @State private var currentBalanceStr: String = ""
+    @State private var principalAmountStr: String = ""
+    @State private var interestRateStr: String = ""
+    @State private var hasMaturityDate: Bool = false
+    @State private var maturityDate: Date = Date().addingTimeInterval(365 * 86400 * 5)
+    @State private var payoutFrequency: String = "cumulative"
+    @State private var premiumAmountStr: String = ""
+    @State private var premiumTermYearsStr: String = ""
+    @State private var policyNumber: String = ""
+    @State private var institutionName: String = ""
     
     var body: some View {
         NavigationStack {
             Form {
-                Section("Asset Details") {
-                    TextField("Asset Name (e.g. Savings AC, Stocks)", text: $name)
-                    
-                    Picker("Holding Type", selection: $selectedHoldingType) {
+                Section("Investment Classification") {
+                    Picker("Investment Type", selection: $selectedHoldingType) {
                         ForEach(HoldingType.allCases) { type in
                             Text(type.displayName).tag(type)
                         }
@@ -248,8 +312,17 @@ struct AssetFormSheet: View {
                             selectedSubCategory = nil
                         }
                     }
+                }
+                
+                Section("Basic Information") {
+                    let placeholder = namePlaceholder
+                    TextField(placeholder, text: $name)
                     
                     if selectedHoldingType == .investment {
+                        TextField("Ticker / Symbol (e.g. RELIANCE, AAPL)", text: $ticker)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.characters)
+                        
                         if let category = selectedCategory {
                             Picker("Subcategory", selection: $selectedSubCategory) {
                                 Text("Unassigned").tag(nil as SubCategory?)
@@ -258,9 +331,93 @@ struct AssetFormSheet: View {
                                 }
                             }
                         }
-                    } else if asset == nil {
-                        let label = selectedHoldingType == .bankBalance ? "Initial Balance" : "Deposit Amount"
-                        TextField(label, text: $initialBalance)
+                    } else if selectedHoldingType == .bankBalance || selectedHoldingType == .fixedDeposit || selectedHoldingType == .insuranceAnnuity {
+                        TextField("Institution / Bank Name (Optional)", text: $institutionName)
+                    }
+                }
+                
+                // Specific Fields per Type
+                switch selectedHoldingType {
+                case .investment:
+                    Section("Investment Note") {
+                        Text("Transactions (Buy/Sell) can be added on the asset details page after saving.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    
+                case .bankBalance:
+                    Section("Account Balance") {
+                        TextField("Current Account Balance", text: $currentBalanceStr)
+                            .keyboardType(.decimalPad)
+                    }
+                    
+                case .fixedDeposit:
+                    Section("Fixed Deposit / RD Parameters") {
+                        TextField("Principal Deposited Amount", text: $principalAmountStr)
+                            .keyboardType(.decimalPad)
+                        
+                        TextField("Interest Rate (% p.a., e.g., 7.5)", text: $interestRateStr)
+                            .keyboardType(.decimalPad)
+                        
+                        Picker("Interest Payout Mode", selection: $payoutFrequency) {
+                            Text("Cumulative (Maturity Compounded)").tag("cumulative")
+                            Text("Monthly Payout").tag("monthly")
+                            Text("Quarterly Payout").tag("quarterly")
+                            Text("Annual Payout").tag("annual")
+                        }
+                        .pickerStyle(.menu)
+                        
+                        TextField("Current Total Balance / Value", text: $currentBalanceStr)
+                            .keyboardType(.decimalPad)
+                        
+                        Toggle("Set Maturity Date", isOn: $hasMaturityDate)
+                        if hasMaturityDate {
+                            DatePicker("Maturity Date", selection: $maturityDate, displayedComponents: .date)
+                        }
+                    }
+                    
+                case .postOffice:
+                    Section("Post Office Scheme Details") {
+                        TextField("Deposit / Current Balance Amount", text: $currentBalanceStr)
+                            .keyboardType(.decimalPad)
+                        
+                        TextField("Interest Rate (% p.a., e.g., 7.1)", text: $interestRateStr)
+                            .keyboardType(.decimalPad)
+                        
+                        Picker("Interest Payout Mode", selection: $payoutFrequency) {
+                            Text("Cumulative / At Maturity").tag("cumulative")
+                            Text("Monthly Income Scheme (MIS)").tag("monthly")
+                            Text("Quarterly Payout").tag("quarterly")
+                            Text("Annual Payout").tag("annual")
+                        }
+                        .pickerStyle(.menu)
+                        
+                        Toggle("Set Maturity Date", isOn: $hasMaturityDate)
+                        if hasMaturityDate {
+                            DatePicker("Maturity Date", selection: $maturityDate, displayedComponents: .date)
+                        }
+                    }
+                    
+                case .epf:
+                    Section("EPF / Provident Fund Details") {
+                        TextField("Total Accumulated Balance (Employee + Employer)", text: $currentBalanceStr)
+                            .keyboardType(.decimalPad)
+                        
+                        TextField("Interest Rate (% p.a., e.g., 8.25)", text: $interestRateStr)
+                            .keyboardType(.decimalPad)
+                    }
+                    
+                case .insuranceAnnuity:
+                    Section("Policy & Annuity Details") {
+                        TextField("Policy / Account Number (Optional)", text: $policyNumber)
+                        
+                        TextField("Annual Premium Amount", text: $premiumAmountStr)
+                            .keyboardType(.decimalPad)
+                        
+                        TextField("Payment Term (Years, e.g. 15)", text: $premiumTermYearsStr)
+                            .keyboardType(.numberPad)
+                        
+                        TextField("Current Cash / Surrender Value", text: $currentBalanceStr)
                             .keyboardType(.decimalPad)
                     }
                 }
@@ -290,9 +447,24 @@ struct AssetFormSheet: View {
             .onAppear {
                 if let asset = asset {
                     name = asset.name
+                    ticker = asset.ticker
                     selectedCategory = asset.category
                     selectedSubCategory = asset.subCategory
                     selectedHoldingType = asset.holdingType
+                    currentBalanceStr = asset.currentPrice > 0 ? "\(asset.currentPrice.formattedPlain)" : ""
+                    principalAmountStr = asset.principalAmount > 0 ? "\(asset.principalAmount.formattedPlain)" : ""
+                    interestRateStr = asset.interestRate > 0 ? "\(asset.interestRate)" : ""
+                    if let mDate = asset.maturityDate {
+                        hasMaturityDate = true
+                        maturityDate = mDate
+                    } else {
+                        hasMaturityDate = false
+                    }
+                    payoutFrequency = asset.payoutFrequency
+                    premiumAmountStr = asset.premiumAmount > 0 ? "\(asset.premiumAmount.formattedPlain)" : ""
+                    premiumTermYearsStr = asset.premiumTermYears > 0 ? "\(asset.premiumTermYears)" : ""
+                    policyNumber = asset.policyNumber
+                    institutionName = asset.institutionName
                 } else if let initialCategory = initialCategory {
                     selectedCategory = initialCategory
                 }
@@ -300,23 +472,53 @@ struct AssetFormSheet: View {
         }
     }
     
+    private var namePlaceholder: String {
+        switch selectedHoldingType {
+        case .investment: return "Asset Name (e.g. Reliance, Apple Inc)"
+        case .bankBalance: return "Account Name (e.g. HDFC Savings, ICICI Salary)"
+        case .fixedDeposit: return "FD Name (e.g. SBI 1-Yr FD, HDFC Tax Saver)"
+        case .postOffice: return "Scheme Name (e.g. PPF Account, NSC V)"
+        case .epf: return "EPF Account Name / UAN"
+        case .insuranceAnnuity: return "Policy Name (e.g. LIC Jeevan Umang)"
+        }
+    }
+    
     private func save() {
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
         guard !trimmedName.isEmpty, let category = selectedCategory else { return }
         
-        if let asset = asset {
-            asset.name = trimmedName
-            asset.category = category
-            asset.subCategory = selectedHoldingType == .investment ? selectedSubCategory : nil
-            asset.holdingType = selectedHoldingType
-        } else {
-            let newAsset = Asset(name: trimmedName, category: category)
-            newAsset.subCategory = selectedHoldingType == .investment ? selectedSubCategory : nil
-            newAsset.holdingType = selectedHoldingType
-            if selectedHoldingType != .investment, let balance = Double(initialBalance) {
-                newAsset.currentPrice = balance
+        let targetAsset = asset ?? Asset(name: trimmedName, category: category, ticker: ticker)
+        targetAsset.name = trimmedName
+        targetAsset.ticker = ticker
+        targetAsset.category = category
+        targetAsset.holdingType = selectedHoldingType
+        targetAsset.subCategory = selectedHoldingType == .investment ? selectedSubCategory : nil
+        
+        let currentBalance = Double(currentBalanceStr) ?? 0.0
+        let principal = Double(principalAmountStr) ?? 0.0
+        let interestRate = Double(interestRateStr) ?? 0.0
+        let premiumAmount = Double(premiumAmountStr) ?? 0.0
+        let premiumTerm = Int(premiumTermYearsStr) ?? 0
+        
+        targetAsset.interestRate = interestRate
+        targetAsset.principalAmount = principal
+        targetAsset.maturityDate = hasMaturityDate ? maturityDate : nil
+        targetAsset.payoutFrequency = payoutFrequency
+        targetAsset.premiumAmount = premiumAmount
+        targetAsset.premiumTermYears = premiumTerm
+        targetAsset.policyNumber = policyNumber
+        targetAsset.institutionName = institutionName
+        
+        if selectedHoldingType.isNonUnitized {
+            if currentBalance > 0 {
+                targetAsset.currentPrice = currentBalance
+            } else if principal > 0 {
+                targetAsset.currentPrice = principal
             }
-            modelContext.insert(newAsset)
+        }
+        
+        if asset == nil {
+            modelContext.insert(targetAsset)
         }
     }
     
@@ -324,5 +526,15 @@ struct AssetFormSheet: View {
         guard let asset else { return }
         modelContext.delete(asset)
         dismiss()
+    }
+}
+
+extension Double {
+    fileprivate var formattedPlain: String {
+        if self.truncatingRemainder(dividingBy: 1) == 0 {
+            return String(format: "%.0f", self)
+        } else {
+            return String(format: "%.2f", self)
+        }
     }
 }
