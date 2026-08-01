@@ -17,6 +17,7 @@ enum NavigationItem: String, CaseIterable, Identifiable {
     case importWizard = "Data Import"
     case rebalancer = "Rebalancer"
     case taxPlanner = "Tax Planner"
+    case fiTracker = "Time to FI"
     case brokers = "Brokers"
     case currencies = "Currencies"
     
@@ -32,6 +33,7 @@ enum NavigationItem: String, CaseIterable, Identifiable {
         case .importWizard: return "square.and.arrow.down.on.square.fill"
         case .rebalancer: return "scale.3d"
         case .taxPlanner: return "percent"
+        case .fiTracker: return "flame.fill"
         case .brokers: return "building.columns.fill"
         case .currencies: return "dollarsign.circle.fill"
         }
@@ -154,6 +156,8 @@ struct ContentView: View {
             PortfolioRebalancerView()
         case .taxPlanner:
             TaxLiabilityView()
+        case .fiTracker:
+            FITrackerDetailView()
         case .brokers:
             BrokerListView()
         case .currencies:
@@ -178,7 +182,33 @@ struct SidebarView: View {
             return sum + PortfolioMetrics.currentValueInINR(for: asset, rate: rate)
         }
     }
-
+    
+    private var fiSummaryText: String {
+        @AppStorage("fiTargetGoal") var targetGoal: Double = FICalculator.defaultTargetGoal
+        @AppStorage("fiBirthDateTimeInterval") var birthDateTimeInterval: Double = FICalculator.defaultBirthDate.timeIntervalSince1970
+        @AppStorage("fiMonthlySIP") var monthlySIP: Double = FICalculator.defaultMonthlySIP
+        @AppStorage("fiReturnRate") var returnRate: Double = FICalculator.defaultReturnRate
+        @AppStorage("fiInflationRate") var inflationRate: Double = FICalculator.defaultInflationRate
+        @AppStorage("fiSafeWithdrawalRate") var safeWithdrawalRate: Double = FICalculator.defaultSWR
+        
+        let projection = FICalculator.projectFI(
+            currentNetWorth: totalNetworth,
+            targetGoal: targetGoal,
+            birthDate: Date(timeIntervalSince1970: birthDateTimeInterval),
+            monthlySIP: monthlySIP,
+            returnRate: returnRate,
+            inflationRate: inflationRate,
+            safeWithdrawalRate: safeWithdrawalRate
+        )
+        
+        if projection.monthsNeeded == 0 {
+            return "ACHIEVED! 🎉"
+        } else {
+            let yrs = projection.monthsNeeded / 12
+            let mos = projection.monthsNeeded % 12
+            return "\(yrs)y \(mos)m (\(projection.progressPercentage.formatted1)%)"
+        }
+    }
 
     
     var body: some View {
@@ -200,6 +230,23 @@ struct SidebarView: View {
                     }
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
+                    
+                    Divider()
+                        .padding(.vertical, 2)
+                    
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("TIME TO FI")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(.secondary)
+                            Text(fiSummaryText)
+                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                .foregroundStyle(AppTheme.accent)
+                        }
+                        Spacer()
+                        Image(systemName: "flame.fill")
+                            .foregroundStyle(.orange)
+                    }
                 }
                 .padding(.vertical, 4)
             }
@@ -226,6 +273,9 @@ struct SidebarView: View {
             }
             
             Section("ANALYTICS & TOOLS") {
+                NavigationLink(value: NavigationItem.fiTracker) {
+                    Label("Time to FI", systemImage: NavigationItem.fiTracker.icon)
+                }
                 NavigationLink(value: NavigationItem.importWizard) {
                     Label("Import Wizard", systemImage: NavigationItem.importWizard.icon)
                 }

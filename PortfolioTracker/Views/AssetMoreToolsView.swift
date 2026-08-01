@@ -12,6 +12,38 @@ struct AssetMoreToolsView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
+                // Card 0: Time to FI (Financial Independence)
+                NavigationLink(destination: FITrackerDetailView()) {
+                    HStack(spacing: 16) {
+                        Image(systemName: "flame.fill")
+                            .font(.title2)
+                            .foregroundStyle(.white)
+                            .frame(width: 44, height: 44)
+                            .background(LinearGradient(colors: [.orange, .red], startPoint: .top, endPoint: .bottom))
+                            .clipShape(Circle())
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Time to FI (Financial Independence)")
+                               .font(.headline)
+                               .foregroundStyle(.primary)
+                            Text("Freedom projection date, years to FI, monthly SIP growth & milestones")
+                               .font(.caption)
+                               .foregroundStyle(.secondary)
+                               .multilineTextAlignment(.leading)
+                        }
+                        
+                        Spacer()
+                        
+                        Image(systemName: "chevron.right")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(16)
+                    .background(Color(.systemGray6))
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                }
+                .buttonStyle(.plain)
+                
                 // Card 1: Bulk Price Update
                 NavigationLink(destination: BulkAssetUpdateView()) {
                     HStack(spacing: 16) {
