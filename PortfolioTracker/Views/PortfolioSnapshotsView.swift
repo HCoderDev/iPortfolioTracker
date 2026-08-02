@@ -17,6 +17,7 @@ struct PortfolioSnapshotsView: View {
     @Query(sort: \Currency.code) private var currencies: [Currency]
     
     @State private var showCreateSheet = false
+    @State private var snapshotToDelete: PortfolioSnapshot?
     
     private var chartData: [PortfolioSnapshot] {
         snapshots.sorted(by: { $0.date < $1.date })
@@ -147,9 +148,16 @@ struct PortfolioSnapshotsView: View {
                                 .buttonStyle(.plain)
                                 .contextMenu {
                                     Button(role: .destructive) {
-                                        deleteSnapshot(snap)
+                                        snapshotToDelete = snap
                                     } label: {
                                         Label("Delete Snapshot", systemImage: "trash")
+                                    }
+                                }
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    Button(role: .destructive) {
+                                        snapshotToDelete = snap
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
                                     }
                                 }
                             }
@@ -183,6 +191,24 @@ struct PortfolioSnapshotsView: View {
                     takeSnapshot(date: date, note: note)
                 }
             )
+        }
+        .alert("Delete Snapshot?", isPresented: Binding(
+            get: { snapshotToDelete != nil },
+            set: { if !$0 { snapshotToDelete = nil } }
+        )) {
+            Button("Cancel", role: .cancel) { snapshotToDelete = nil }
+            Button("Delete", role: .destructive) {
+                if let snap = snapshotToDelete {
+                    deleteSnapshot(snap)
+                    snapshotToDelete = nil
+                }
+            }
+        } message: {
+            if let snap = snapshotToDelete {
+                Text("Are you sure you want to delete the snapshot from \(snap.date.formatted(date: .abbreviated, time: .shortened))?")
+            } else {
+                Text("Are you sure you want to delete this snapshot?")
+            }
         }
     }
     

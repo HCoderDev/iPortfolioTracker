@@ -59,23 +59,40 @@ enum PortfolioMetrics {
 
     static func isSoldOff(_ asset: Asset) -> Bool {
         if asset.holdingType.isNonUnitized {
-            return false
+            return asset.transactions.contains(where: { $0.config.closesAsset })
         }
         let remainingUnits = totalUnits(for: asset)
         return abs(remainingUnits) <= 0.000001 && asset.transactions.contains(where: { $0.type == .buy })
     }
     
+    static func totalInterestAccrued(for asset: Asset) -> Double {
+        asset.transactions.filter { $0.config.affectsProfit }.reduce(0.0) { $0 + $1.amount }
+    }
+    
     static func investedValue(for asset: Asset) -> Double {
         if asset.holdingType.isNonUnitized {
-            if asset.principalAmount > 0 {
-                let buyTotal = asset.transactions.filter { $0.type == .buy }.reduce(0.0) { $0 + ($1.units * $1.pricePerUnit) }
-                return buyTotal > 0 ? buyTotal : asset.principalAmount
-            } else if asset.premiumAmount > 0 && asset.premiumTermYears > 0 {
-                let buyTotal = asset.transactions.filter { $0.type == .buy }.reduce(0.0) { $0 + ($1.units * $1.pricePerUnit) }
-                return buyTotal > 0 ? buyTotal : asset.premiumAmount
+            let txInvested = asset.transactions.reduce(0.0) { sum, tx in
+                let cfg = tx.config
+                guard cfg.affectsInvestedAmount else { return sum }
+                if cfg.cashDirection == .outflow {
+                    return sum + tx.amount
+                } else if cfg.cashDirection == .inflow {
+                    return sum - tx.amount
+                }
+                return sum
             }
-            let totalInterest = asset.transactions.filter { $0.type == .dividend }.reduce(0.0) { $0 + ($1.units * $1.pricePerUnit) }
-            return max(0, asset.currentPrice - totalInterest)
+            
+            if txInvested > 0 {
+                return txInvested
+            }
+            if asset.principalAmount > 0 {
+                return asset.principalAmount
+            }
+            if asset.premiumAmount > 0 {
+                return asset.premiumAmount
+            }
+            let totalProfit = totalInterestAccrued(for: asset)
+            return max(0, asset.currentPrice - totalProfit)
         }
         return FifoCalculator.calculate(transactions: asset.transactions).holdings.reduce(0.0) { partialResult, lot in
             partialResult + (lot.remainingUnits * lot.buyPrice)
@@ -83,15 +100,35 @@ enum PortfolioMetrics {
     }
     
     static func lifetimeInvested(for asset: Asset) -> Double {
-        FifoCalculator.calculate(transactions: asset.transactions).lifetimeInvested
+        if asset.holdingType.isNonUnitized {
+            let sumOutflows = asset.transactions.filter { $0.config.affectsInvestedAmount && $0.config.cashDirection == .outflow }.reduce(0.0) { $0 + $1.amount }
+            return sumOutflows > 0 ? sumOutflows : investedValue(for: asset)
+        }
+        return FifoCalculator.calculate(transactions: asset.transactions).lifetimeInvested
     }
     
     static func lifetimeRetrieved(for asset: Asset) -> Double {
-        FifoCalculator.calculate(transactions: asset.transactions).lifetimeRetrieved
+        if asset.holdingType.isNonUnitized {
+            return asset.transactions.filter { $0.config.cashDirection == .inflow }.reduce(0.0) { $0 + $1.amount }
+        }
+        return FifoCalculator.calculate(transactions: asset.transactions).lifetimeRetrieved
     }
     
     static func currentValue(for asset: Asset) -> Double {
         if asset.holdingType.isNonUnitized {
+            let txBalance = asset.transactions.reduce(0.0) { sum, tx in
+                let cfg = tx.config
+                guard cfg.affectsAssetValue else { return sum }
+                if cfg.cashDirection == .outflow || cfg.cashDirection == .internalAccrual {
+                    return sum + tx.amount
+                } else if cfg.cashDirection == .inflow {
+                    return sum - tx.amount
+                }
+                return sum
+            }
+            if txBalance > 0 {
+                return max(txBalance, asset.currentPrice)
+            }
             return asset.currentPrice
         }
         return totalUnits(for: asset) * asset.currentPrice
@@ -103,15 +140,21 @@ enum PortfolioMetrics {
     
     static func cashFlows(for asset: Asset, valuationDate: Date = Date()) -> [CashFlow] {
         let transactions = orderedTransactions(asset.transactions)
-        var cashFlows = transactions.map { transaction in
-            let amount = transaction.units * transaction.pricePerUnit
-            let signedAmount = transaction.type == .buy ? -amount : amount
-            return CashFlow(amount: signedAmount, date: transaction.date)
+        var cashFlows: [CashFlow] = []
+        
+        for tx in transactions {
+            let cfg = tx.config
+            let amount = tx.amount
+            if cfg.cashDirection == .outflow {
+                cashFlows.append(CashFlow(amount: -amount, date: tx.date))
+            } else if cfg.cashDirection == .inflow {
+                cashFlows.append(CashFlow(amount: amount, date: tx.date))
+            }
         }
         
-        let units = totalUnits(for: transactions)
-        if units > 0 {
-            cashFlows.append(CashFlow(amount: currentValue(for: asset), date: valuationDate))
+        let currVal = currentValue(for: asset)
+        if currVal > 0 && !isSoldOff(asset) {
+            cashFlows.append(CashFlow(amount: currVal, date: valuationDate))
         }
         
         return cashFlows
@@ -122,12 +165,12 @@ enum PortfolioMetrics {
     }
     
     static func holdingDurationText(for asset: Asset, asOf date: Date = Date()) -> String {
-        let buys = asset.transactions.filter { $0.type == .buy }
-        guard let firstBuy = buys.min(by: { $0.date < $1.date }), totalUnits(for: asset) > 0 else {
+        let txs = asset.transactions.filter { $0.config.cashDirection == .outflow }
+        guard let firstTx = txs.min(by: { $0.date < $1.date }), currentValue(for: asset) > 0 else {
             return "N/A"
         }
         
-        let days = Calendar.current.dateComponents([.day], from: firstBuy.date, to: date).day ?? 0
+        let days = Calendar.current.dateComponents([.day], from: firstTx.date, to: date).day ?? 0
         
         if days >= 365 {
             return "\(days / 365) yr, \(days % 365) d"
@@ -165,7 +208,6 @@ enum PortfolioMetrics {
         if let lastRate = category.lastInrExchangeRate {
             return lastRate
         }
-        // Try to derive from currencies in the database
         guard
             let inrCurrency = currencies.first(where: { $0.code == "INR" }),
             let catCurrency = currencies.first(where: { $0.code == category.currencyCode }),
@@ -190,16 +232,22 @@ enum PortfolioMetrics {
     }
     
     static func lifetimeInvestedInINR(for asset: Asset, rate: Double) -> Double {
-        FifoCalculator.calculateInINR(transactions: asset.transactions, categoryExchangeRate: rate).lifetimeInvested
+        if asset.holdingType.isNonUnitized {
+            return lifetimeInvested(for: asset) * rate
+        }
+        return FifoCalculator.calculateInINR(transactions: asset.transactions, categoryExchangeRate: rate).lifetimeInvested
     }
     
     static func lifetimeRetrievedInINR(for asset: Asset, rate: Double) -> Double {
-        FifoCalculator.calculateInINR(transactions: asset.transactions, categoryExchangeRate: rate).lifetimeRetrieved
+        if asset.holdingType.isNonUnitized {
+            return lifetimeRetrieved(for: asset) * rate
+        }
+        return FifoCalculator.calculateInINR(transactions: asset.transactions, categoryExchangeRate: rate).lifetimeRetrieved
     }
     
     static func currentValueInINR(for asset: Asset, rate: Double) -> Double {
         if asset.holdingType.isNonUnitized {
-            return asset.currentPrice * rate
+            return currentValue(for: asset) * rate
         }
         return totalUnits(for: asset) * asset.currentPrice * rate
     }
@@ -210,17 +258,23 @@ enum PortfolioMetrics {
     
     static func cashFlowsInINR(for asset: Asset, rate: Double, valuationDate: Date = Date()) -> [CashFlow] {
         let transactions = orderedTransactions(asset.transactions)
-        var cashFlows = transactions.map { transaction in
-            let amount = transaction.units * transaction.pricePerUnit
-            let txRate = transaction.inrExchangeRate ?? rate
-            let amountINR = amount * txRate
-            let signedAmount = transaction.type == .buy ? -amountINR : amountINR
-            return CashFlow(amount: signedAmount, date: transaction.date)
+        var cashFlows: [CashFlow] = []
+        
+        for tx in transactions {
+            let cfg = tx.config
+            let txRate = tx.inrExchangeRate ?? rate
+            let amountINR = tx.amount * txRate
+            
+            if cfg.cashDirection == .outflow {
+                cashFlows.append(CashFlow(amount: -amountINR, date: tx.date))
+            } else if cfg.cashDirection == .inflow {
+                cashFlows.append(CashFlow(amount: amountINR, date: tx.date))
+            }
         }
         
-        let units = totalUnits(for: transactions)
-        if units > 0 {
-            cashFlows.append(CashFlow(amount: currentValueInINR(for: asset, rate: rate), date: valuationDate))
+        let currValINR = currentValueInINR(for: asset, rate: rate)
+        if currValINR > 0 && !isSoldOff(asset) {
+            cashFlows.append(CashFlow(amount: currValINR, date: valuationDate))
         }
         
         return cashFlows
@@ -245,8 +299,8 @@ enum PortfolioMetrics {
         
         var disciplineRatioText: String {
             if buyCount + sellCount == 0 { return "No Trades" }
-            if sellCount == 0 { return "100% Buy (No Sales)" }
-            return String(format: "%.0f%% Buy / %.0f%% Sell", buyPercentage, 100.0 - buyPercentage)
+            if sellCount == 0 { return "100% Buy / Contribution" }
+            return String(format: "%.0f%% Inflow / %.0f%% Outflow", buyPercentage, 100.0 - buyPercentage)
         }
     }
     
@@ -273,10 +327,13 @@ enum PortfolioMetrics {
         var div = 0
         
         for tx in filtered {
-            switch tx.type {
-            case .buy: buy += 1
-            case .sell: sell += 1
-            case .dividend: div += 1
+            let cfg = tx.config
+            if cfg.cashDirection == .outflow {
+                buy += 1
+            } else if cfg.cashDirection == .inflow {
+                sell += 1
+            } else {
+                div += 1
             }
         }
         
