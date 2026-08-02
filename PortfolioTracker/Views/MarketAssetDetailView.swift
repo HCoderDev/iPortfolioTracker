@@ -110,28 +110,35 @@ struct MarketAssetDetailView: View {
     }
     
     // Category & Portfolio Allocation Percentages
-    private var categoryTotalValue: Double {
-        guard let cat = asset.category else { return currentValue }
+    private var assetValueINR: Double {
+        guard let cat = asset.category else { return PortfolioMetrics.currentValue(for: asset) }
+        let rate = PortfolioMetrics.currentInrExchangeRate(for: cat, currencies: currencies)
+        return PortfolioMetrics.currentValueInINR(for: asset, rate: rate)
+    }
+    
+    private var categoryTotalValueINR: Double {
+        guard let cat = asset.category else { return assetValueINR }
         let categoryAssets = allAssets.filter { $0.category?.persistentModelID == cat.persistentModelID }
+        let rate = PortfolioMetrics.currentInrExchangeRate(for: cat, currencies: currencies)
         return categoryAssets.reduce(0.0) { sum, a in
-            sum + (PortfolioMetrics.currentValue(for: a) * (isConversionActive ? currentRate : 1.0))
+            sum + PortfolioMetrics.currentValueInINR(for: a, rate: rate)
         }
     }
     
-    private var portfolioTotalNetWorth: Double {
+    private var portfolioTotalNetWorthINR: Double {
         allAssets.reduce(0.0) { sum, a in
-            let catRate = a.category != nil ? PortfolioMetrics.currentInrExchangeRate(for: a.category!, currencies: currencies) : 1.0
-            let rate = isConversionActive ? catRate : 1.0
-            return sum + (PortfolioMetrics.currentValue(for: a) * rate)
+            guard let cat = a.category else { return sum + PortfolioMetrics.currentValue(for: a) }
+            let rate = PortfolioMetrics.currentInrExchangeRate(for: cat, currencies: currencies)
+            return sum + PortfolioMetrics.currentValueInINR(for: a, rate: rate)
         }
     }
     
     private var categoryAllocationPercentage: Double {
-        categoryTotalValue > 0 ? (currentValue / categoryTotalValue) * 100.0 : 0.0
+        categoryTotalValueINR > 0 ? (assetValueINR / categoryTotalValueINR) * 100.0 : 0.0
     }
     
     private var netWorthAllocationPercentage: Double {
-        portfolioTotalNetWorth > 0 ? (currentValue / portfolioTotalNetWorth) * 100.0 : 0.0
+        portfolioTotalNetWorthINR > 0 ? (assetValueINR / portfolioTotalNetWorthINR) * 100.0 : 0.0
     }
     
     // Trade Discipline
