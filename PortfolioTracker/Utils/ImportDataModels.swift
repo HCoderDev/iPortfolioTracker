@@ -17,10 +17,11 @@ enum ImportMode: String, CaseIterable, Identifiable {
 enum TargetField: String, CaseIterable, Identifiable {
     case ignore = "Ignore Column"
     case assetName = "Asset Name"
-    case transactionType = "Transaction Type (Buy/Sell/Dividend)"
+    case transactionType = "Transaction Type"
     case date = "Transaction Date"
+    case amount = "Amount / Payment / Contribution"
     case quantity = "Quantity / Units"
-    case price = "Price per Unit / Amount"
+    case price = "Price per Unit / Rate"
     case inrExchangeRate = "INR Exchange Rate"
     case ttBuyRate = "TT Buy Rate"
     case ttSellRate = "TT Sell Rate"
@@ -33,6 +34,7 @@ enum TargetField: String, CaseIterable, Identifiable {
         case .assetName: return "Asset Name"
         case .transactionType: return "Type"
         case .date: return "Date"
+        case .amount: return "Amount"
         case .quantity: return "Quantity"
         case .price: return "Price"
         case .inrExchangeRate: return "INR Rate"
@@ -130,6 +132,7 @@ struct ParsedImportRow: Identifiable {
     var units: Double?
     var pricePerUnit: Double?
     var txType: TransactionType?
+    var rawTxType: String?
     var inrExchangeRate: Double?
     
     var ttBuyRate: Double?
@@ -161,6 +164,9 @@ struct PostImportReport: Identifiable {
     var currencyCode: String = "INR"
     var currencySymbol: String = "₹"
     
+    var rawTypeCounts: [String: Int] = [:]
+    var rawTypeTotals: [String: Double] = [:]
+    
     var insertedTransactionIDs: [PersistentIdentifier] = []
     var insertedAssetIDs: [PersistentIdentifier] = []
     
@@ -175,6 +181,9 @@ struct PostImportReport: Identifiable {
         var sellCount: Int = 0
         var dividendCount: Int = 0
         var dividendValue: Double = 0.0
+        
+        var rawTypeCounts: [String: Int] = [:]
+        var rawTypeTotals: [String: Double] = [:]
         
         var netUnits: Double { buyUnits - sellUnits }
         var netValue: Double { buyValue - sellValue }

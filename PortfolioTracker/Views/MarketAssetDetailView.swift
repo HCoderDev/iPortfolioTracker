@@ -109,6 +109,54 @@ struct MarketAssetDetailView: View {
         }
     }
     
+    private var lifetimeInvested: Double {
+        if isConversionActive {
+            return PortfolioMetrics.lifetimeInvestedInINR(for: asset, rate: currentRate)
+        } else {
+            return PortfolioMetrics.lifetimeInvested(for: asset)
+        }
+    }
+    
+    private var lifetimeRetrieved: Double {
+        if isConversionActive {
+            return PortfolioMetrics.lifetimeRetrievedInINR(for: asset, rate: currentRate)
+        } else {
+            return PortfolioMetrics.lifetimeRetrieved(for: asset)
+        }
+    }
+    
+    private var lifetimeDividend: Double {
+        if isConversionActive {
+            return PortfolioMetrics.lifetimeDividendInINR(for: asset, rate: currentRate)
+        } else {
+            return PortfolioMetrics.lifetimeDividend(for: asset)
+        }
+    }
+    
+    private var fifoResult: FifoResult {
+        FifoCalculator.calculate(transactions: asset.transactions)
+    }
+    
+    private var fifoResultINR: FifoResultINR {
+        FifoCalculator.calculateInINR(transactions: asset.transactions, categoryExchangeRate: currentRate)
+    }
+    
+    private var realizedPnl: Double {
+        if isConversionActive {
+            return fifoResultINR.realizedProfitLoss
+        } else {
+            return fifoResult.realizedProfitLoss
+        }
+    }
+    
+    private var totalGainLoss: Double {
+        realizedPnl + unrealizedPnl
+    }
+    
+    private var overallGainLossPercentage: Double {
+        lifetimeInvested > 0 ? (totalGainLoss / lifetimeInvested) * 100.0 : 0.0
+    }
+    
     // Category & Portfolio Allocation Percentages
     private var assetValueINR: Double {
         guard let cat = asset.category else { return PortfolioMetrics.currentValue(for: asset) }
@@ -435,13 +483,47 @@ struct MarketAssetDetailView: View {
                 .padding(.horizontal)
             }
             
-            // Trading Activity & Inception
+            // Tax Lot Holding Summary (STCG vs LTCG)
+            if !asset.holdingType.isNonUnitized {
+                taxHoldingSummarySection
+            }
+            
+            // Trading Activity & Recency
             VStack(alignment: .leading, spacing: 12) {
-                Text("Investment History & Activity")
+                Text("Investment History & Recency")
                     .font(.headline)
                     .padding(.horizontal)
                 
                 VStack(spacing: 12) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Last Invested Date")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(PortfolioMetrics.lastInvestedFormattedText(for: asset))
+                                .font(.subheadline)
+                                .fontWeight(.bold)
+                                .foregroundStyle(.primary)
+                        }
+                        Spacer()
+                        
+                        let status = PortfolioMetrics.recencyStatus(for: asset)
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(status.color)
+                                .frame(width: 8, height: 8)
+                            Text(status.rawValue)
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(status.color)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(status.color.opacity(0.12))
+                        .clipShape(Capsule())
+                    }
+                    
+                    Divider()
+                    
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("First Investment Date")
@@ -493,28 +575,127 @@ struct MarketAssetDetailView: View {
             }
             .padding(.horizontal)
             
-            // Recent Transactions List Preview
+            // Lifetime Capital Flow Card
             VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("Recent Activity")
-                        .font(.headline)
-                    Spacer()
-                    Button("View All") { selectedTab = .transactions }
-                        .font(.caption)
+                Text("Lifetime Cash Flow")
+                    .font(.headline)
+                    .padding(.horizontal)
+                
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Lifetime Invested")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("\(currencySymbol)\(formattedVal(lifetimeInvested))")
+                            .font(.title3)
+                            .fontWeight(.bold)
+                            .foregroundStyle(.primary)
+                        Text("Total Capital Invested")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Color(.secondarySystemBackground)))
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Lifetime Retrieved")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("\(currencySymbol)\(formattedVal(lifetimeRetrieved))")
+                            .font(.title3)
+                            .fontWeight(.bold)
+                            .foregroundStyle(AppTheme.gain)
+                        Text("Sales & Dividends")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Color(.secondarySystemBackground)))
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Lifetime Dividends")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("\(currencySymbol)\(formattedVal(lifetimeDividend))")
+                            .font(.title3)
+                            .fontWeight(.bold)
+                            .foregroundStyle(.orange)
+                        Text("Dividend Payouts Received")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Color(.secondarySystemBackground)))
                 }
                 .padding(.horizontal)
+            }
+            
+            // Overall Performance & Returns
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Overall Performance")
+                    .font(.headline)
+                    .padding(.horizontal)
                 
-                let recent = Array(PortfolioMetrics.reverseOrderedTransactions(asset.transactions).prefix(5))
-                if recent.isEmpty {
-                    Text("No transactions recorded yet.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal)
-                } else {
-                    ForEach(recent) { tx in
-                        transactionRow(tx)
+                VStack(spacing: 12) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Overall Gain / Loss")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text("\(totalGainLoss >= 0 ? "+" : "")\(currencySymbol)\(formattedVal(totalGainLoss)) (\(formattedVal(overallGainLossPercentage))%)")
+                                .font(.title3)
+                                .fontWeight(.bold)
+                                .foregroundStyle(totalGainLoss >= 0 ? AppTheme.gain : AppTheme.loss)
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text("Overall XIRR")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            if let xirr = xirrValue {
+                                Text(String(format: "%.2f%%", xirr * 100))
+                                    .font(.title3)
+                                    .fontWeight(.bold)
+                                    .foregroundStyle(xirr >= 0 ? AppTheme.gain : AppTheme.loss)
+                            } else {
+                                Text("N/A")
+                                    .font(.title3)
+                                    .fontWeight(.bold)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    
+                    Divider()
+                    
+                    HStack(spacing: 16) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Realized Gain/Loss")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Text("\(realizedPnl >= 0 ? "+" : "")\(currencySymbol)\(formattedVal(realizedPnl))")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(realizedPnl >= 0 ? AppTheme.gain : AppTheme.loss)
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text("Unrealized Gain/Loss")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Text("\(unrealizedPnl >= 0 ? "+" : "")\(currencySymbol)\(formattedVal(unrealizedPnl))")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(unrealizedPnl >= 0 ? AppTheme.gain : AppTheme.loss)
+                        }
                     }
                 }
+                .padding()
+                .background(RoundedRectangle(cornerRadius: 14).fill(Color(.secondarySystemBackground)))
+                .padding(.horizontal)
             }
         }
     }
@@ -753,6 +934,140 @@ struct MarketAssetDetailView: View {
         }
     }
     
+    // MARK: - Tax Holding Breakdown (STCG vs LTCG)
+    @ViewBuilder
+    private var taxHoldingSummarySection: some View {
+        let taxResult = FifoCalculator.calculateTax(asset: asset, currencies: currencies)
+        let activeLots = taxResult.activeLots
+        let ltcgLots = activeLots.filter { $0.taxCategory == .ltcg }
+        let stcgLots = activeLots.filter { $0.taxCategory == .stcg || $0.taxCategory == .slab }
+        
+        let ltcgUnits = ltcgLots.reduce(0.0) { $0 + $1.remainingUnits }
+        let stcgUnits = stcgLots.reduce(0.0) { $0 + $1.remainingUnits }
+        let totalActiveUnits = ltcgUnits + stcgUnits
+        
+        let ltcgGainINR = ltcgLots.reduce(0.0) { $0 + $1.unrealizedGainINR }
+        let stcgGainINR = stcgLots.reduce(0.0) { $0 + $1.unrealizedGainINR }
+        
+        let thresholdMonths = asset.category?.ltcgMonths ?? (asset.taxCountry == .us ? 24 : 12)
+        let yrText = (thresholdMonths % 12 == 0) ? "\(thresholdMonths / 12) yr" : "\(thresholdMonths) mo"
+        let thresholdLabel = "Holdings > \(yrText)"
+        let stcgThresholdLabel = "Holdings ≤ \(yrText)"
+        
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Capital Gains Breakdown (STCG vs LTCG)")
+                    .font(.headline)
+                Spacer()
+                Text("\(asset.category?.name ?? "Asset") Config (\(yrText) LTCG)")
+                    .font(.caption2.weight(.bold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.blue.opacity(0.12))
+                    .foregroundStyle(.blue)
+                    .clipShape(Capsule())
+            }
+            .padding(.horizontal)
+            
+            HStack(spacing: 12) {
+                // LTCG Card (Subtle Green)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("LTCG HOLDINGS")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(AppTheme.gain)
+                        Spacer()
+                        Text("Tax 12.5%")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(AppTheme.gain)
+                    }
+                    
+                    Text("\(formattedVal(ltcgUnits)) units")
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                    
+                    HStack(spacing: 2) {
+                        Text("Unrealized:")
+                            .font(.caption2).foregroundStyle(.secondary)
+                        Text("\(ltcgGainINR >= 0 ? "+" : "")₹\(formattedVal(ltcgGainINR))")
+                            .font(.caption2).fontWeight(.semibold)
+                            .foregroundStyle(ltcgGainINR >= 0 ? AppTheme.gain : AppTheme.loss)
+                    }
+                    
+                    Text(thresholdLabel)
+                        .font(.system(size: 8))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(AppTheme.gain.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(AppTheme.gain.opacity(0.3), lineWidth: 1))
+                
+                // STCG Card (Subtle Orange)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("STCG HOLDINGS")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(Color.orange)
+                        Spacer()
+                        Text("Tax 20%")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(Color.orange)
+                    }
+                    
+                    Text("\(formattedVal(stcgUnits)) units")
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                    
+                    HStack(spacing: 2) {
+                        Text("Unrealized:")
+                            .font(.caption2).foregroundStyle(.secondary)
+                        Text("\(stcgGainINR >= 0 ? "+" : "")₹\(formattedVal(stcgGainINR))")
+                            .font(.caption2).fontWeight(.semibold)
+                            .foregroundStyle(stcgGainINR >= 0 ? AppTheme.gain : AppTheme.loss)
+                    }
+                    
+                    Text(stcgThresholdLabel)
+                        .font(.system(size: 8))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.orange.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.orange.opacity(0.3), lineWidth: 1))
+            }
+            .padding(.horizontal)
+            
+            // Progress Bar Distribution
+            if totalActiveUnits > 0 {
+                let ltcgPct = (ltcgUnits / totalActiveUnits) * 100.0
+                VStack(alignment: .leading, spacing: 4) {
+                    GeometryReader { geo in
+                        HStack(spacing: 2) {
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(AppTheme.gain)
+                                .frame(width: max(2, geo.size.width * CGFloat(ltcgPct / 100.0)))
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(Color.orange)
+                        }
+                    }
+                    .frame(height: 6)
+                    
+                    HStack {
+                        Text(String(format: "LTCG: %.1f%%", ltcgPct))
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(AppTheme.gain)
+                        Spacer()
+                        Text(String(format: "STCG: %.1f%%", 100.0 - ltcgPct))
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(Color.orange)
+                    }
+                }
+                .padding(.horizontal)
+            }
+        }
+    }
+    
     // MARK: - Row Helper for Transactions
     
     @ViewBuilder
@@ -785,6 +1100,8 @@ struct MarketAssetDetailView: View {
             return nil
         }()
         
+        let taxBadge = PortfolioMetrics.taxBadgeInfo(for: tx, asset: asset)
+        
         HStack {
             Image(systemName: tx.config.iconName)
                 .font(.title3)
@@ -793,18 +1110,32 @@ struct MarketAssetDetailView: View {
                 .background(Circle().fill(Color.gray.opacity(0.12)))
             
             VStack(alignment: .leading, spacing: 2) {
-                Text(tx.config.displayName)
-                    .font(.body)
-                    .fontWeight(.medium)
+                HStack(spacing: 6) {
+                    Text(tx.config.displayName)
+                        .font(.body)
+                        .fontWeight(.medium)
+                    
+                    if let badge = taxBadge {
+                        Text(badge.fullLabel)
+                            .font(.system(size: 9, weight: .bold))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(badge.isLTCG ? AppTheme.gain.opacity(0.15) : Color.orange.opacity(0.15))
+                            .foregroundStyle(badge.isLTCG ? AppTheme.gain : Color.orange)
+                            .clipShape(Capsule())
+                    }
+                }
                 
                 HStack(spacing: 4) {
                     Text(tx.date.formatted(date: .abbreviated, time: .omitted))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     
-                    Text("• Held \(holdingDurationText)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                    if tx.type == .buy {
+                        Text("• Held \(holdingDurationText)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             
@@ -839,6 +1170,31 @@ struct MarketAssetDetailView: View {
         .contentShape(Rectangle())
         .onTapGesture {
             transactionToEdit = tx
+        }
+        .contextMenu {
+            Button {
+                transactionToEdit = tx
+            } label: {
+                Label("Edit Transaction", systemImage: "pencil")
+            }
+            Button(role: .destructive) {
+                modelContext.delete(tx)
+            } label: {
+                Label("Delete Transaction", systemImage: "trash")
+            }
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) {
+                modelContext.delete(tx)
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+            Button {
+                transactionToEdit = tx
+            } label: {
+                Label("Edit", systemImage: "pencil")
+            }
+            .tint(.blue)
         }
     }
     

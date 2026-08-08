@@ -13,6 +13,7 @@ enum NavigationItem: String, CaseIterable, Identifiable {
     case assets = "Assets"
     case categories = "Categories"
     case flows = "Flows & Cash"
+    case passiveIncome = "Passive Income"
     case reminders = "Reminders"
     case importWizard = "Data Import"
     case rebalancer = "Rebalancer"
@@ -29,6 +30,7 @@ enum NavigationItem: String, CaseIterable, Identifiable {
         case .assets: return "chart.line.uptrend.xyaxis"
         case .categories: return "square.grid.2x2.fill"
         case .flows: return "arrow.up.arrow.down.circle.fill"
+        case .passiveIncome: return "banknote.fill"
         case .reminders: return "calendar.badge.clock"
         case .importWizard: return "square.and.arrow.down.on.square.fill"
         case .rebalancer: return "scale.3d"
@@ -90,18 +92,18 @@ struct ContentView: View {
                             .tag(2)
                             
                             NavigationStack {
-                                AssetListView()
+                                PassiveIncomeView()
                             }
                             .tabItem {
-                                Label("Assets", systemImage: "chart.line.uptrend.xyaxis")
+                                Label("Passive Income", systemImage: "banknote.fill")
                             }
                             .tag(3)
                             
                             NavigationStack {
-                                RemindersListView()
+                                AssetListView()
                             }
                             .tabItem {
-                                Label("Reminders", systemImage: "calendar.badge.clock")
+                                Label("Assets", systemImage: "chart.line.uptrend.xyaxis")
                             }
                             .tag(4)
                         }
@@ -148,6 +150,8 @@ struct ContentView: View {
             CategoryListView()
         case .flows:
             PortfolioFlowsView()
+        case .passiveIncome:
+            PassiveIncomeView()
         case .reminders:
             RemindersListView()
         case .importWizard:
@@ -266,6 +270,9 @@ struct SidebarView: View {
             Section("TRANSACTIONS & CASH") {
                 NavigationLink(value: NavigationItem.flows) {
                     Label("Flows & Cash", systemImage: NavigationItem.flows.icon)
+                }
+                NavigationLink(value: NavigationItem.passiveIncome) {
+                    Label("Passive Income", systemImage: NavigationItem.passiveIncome.icon)
                 }
                 NavigationLink(value: NavigationItem.reminders) {
                     Label("Reminders", systemImage: NavigationItem.reminders.icon)

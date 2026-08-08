@@ -186,54 +186,30 @@ struct FifoCalculator {
         assetType: TaxAssetType,
         buyDate: Date,
         valuationDate: Date,
-        slabRate: Double
+        slabRate: Double,
+        ltcgThresholdMonths: Int? = nil
     ) -> (classification: TaxClassification, rate: Double) {
         let calendar = Calendar.current
         let days = calendar.dateComponents([.day], from: buyDate, to: valuationDate).day ?? 0
         
-        switch country {
-        case .india:
-            switch assetType {
-            case .equity:
-                if days > 365 { // > 1 year
-                    return (.ltcg, 0.125) // 12.5% LTCG
-                } else {
-                    return (.stcg, 0.20) // 20% STCG
-                }
-            case .debt:
-                return (.slab, slabRate) // Taxes at slab rate
-            case .other:
-                if days > (365 * 3) { // > 3 years
-                    return (.ltcg, 0.125) // 12.5% LTCG
-                } else {
-                    return (.slab, slabRate) // Slab taxed
-                }
-            }
-            
-        case .us:
-            // US stocks treated as unlisted equities for Indian tax residents
-            switch assetType {
-            case .equity:
-                if days > (365 * 2) { // > 2 years
-                    return (.ltcg, 0.125) // 12.5% LTCG
-                } else {
-                    return (.slab, slabRate) // STCG at Slab rate
-                }
-            case .debt:
-                return (.slab, slabRate) // Debt/Bond funds always taxed at slab
-            case .other:
-                if days > (365 * 2) { // > 2 years
-                    return (.ltcg, 0.125)
-                } else {
-                    return (.slab, slabRate)
-                }
-            }
+        if assetType == .debt {
+            return (.slab, slabRate)
+        }
+        
+        let thresholdMonths = ltcgThresholdMonths ?? (country == .us ? 24 : (assetType == .equity ? 12 : 36))
+        let thresholdDays = Int(Double(thresholdMonths) * 30.4375)
+        
+        if days > thresholdDays {
+            return (.ltcg, 0.125)
+        } else {
+            return (.stcg, 0.20)
         }
     }
     
     /// Calculate FIFO tax result for a single asset.
     static func calculateTax(asset: Asset, currencies: [Currency], slabRate: Double = 0.30) -> FifoTaxResult {
         let calendar = Calendar.current
+        let customMonths = asset.category?.ltcgMonths
         let rate = PortfolioMetrics.currentInrExchangeRate(for: asset.category ?? Category(name: "Temp", currencyCode: "INR"), currencies: currencies)
         
         let sortedTx = asset.transactions.sorted {
@@ -275,7 +251,8 @@ struct FifoCalculator {
                             assetType: asset.taxAssetType,
                             buyDate: lot.date,
                             valuationDate: tx.date,
-                            slabRate: slabRate
+                            slabRate: slabRate,
+                            ltcgThresholdMonths: customMonths
                         )
                         
                         let trade = FifoRealizedTrade(
@@ -301,11 +278,11 @@ struct FifoCalculator {
             case .dividend:
                 // Dividend treated as income, taxed at slab rate
                 if isInCurrentFinancialYear(tx.date) {
-                    let dividendIncome = tx.units * tx.pricePerUnit
+                    let dividendIncome = tx.amount
                     realizedTrades.append(FifoRealizedTrade(
                         sellDate: tx.date,
                         buyDate: tx.date,
-                        units: 1.0,
+                        units: 0.0,
                         buyPrice: 0.0,
                         buyPriceINR: 0.0,
                         sellPrice: dividendIncome,
@@ -330,7 +307,8 @@ struct FifoCalculator {
                         assetType: asset.taxAssetType,
                         buyDate: lot.date,
                         valuationDate: Date(),
-                        slabRate: slabRate
+                        slabRate: slabRate,
+                        ltcgThresholdMonths: customMonths
                     )
                     
                     let ageDays = calendar.dateComponents([.day], from: lot.date, to: Date()).day ?? 0
@@ -363,8 +341,8 @@ struct FifoCalculator {
         var buyLots: [(originalUnits: Double, remainingUnits: Double, buyPrice: Double, date: Date)] = []
         var realizedPl = 0.0
         
-        let lifetimeInvested = transactions.filter { $0.type == .buy }.reduce(0.0) { $0 + ($1.units * $1.pricePerUnit) }
-        let lifetimeRetrieved = transactions.filter { $0.type == .sell || $0.type == .dividend }.reduce(0.0) { $0 + ($1.units * $1.pricePerUnit) }
+        let lifetimeInvested = transactions.filter { $0.type == .buy }.reduce(0.0) { $0 + $1.amount }
+        let lifetimeRetrieved = transactions.filter { $0.type == .sell || $0.type == .dividend }.reduce(0.0) { $0 + $1.amount }
         
         for tx in sortedTx {
             switch tx.type {
@@ -397,7 +375,7 @@ struct FifoCalculator {
                     }
                 }
             case .dividend:
-                let retrieved = tx.units * tx.pricePerUnit
+                let retrieved = tx.amount
                 realizedPl += retrieved
             }
         }
@@ -423,11 +401,11 @@ struct FifoCalculator {
         
         let lifetimeInvested = transactions.filter { $0.type == .buy }.reduce(0.0) { sum, tx in
             let rate = tx.inrExchangeRate ?? categoryExchangeRate
-            return sum + (tx.units * tx.pricePerUnit * rate)
+            return sum + (tx.amount * rate)
         }
         let lifetimeRetrieved = transactions.filter { $0.type == .sell || $0.type == .dividend }.reduce(0.0) { sum, tx in
             let rate = tx.inrExchangeRate ?? categoryExchangeRate
-            return sum + (tx.units * tx.pricePerUnit * rate)
+            return sum + (tx.amount * rate)
         }
         
         for tx in sortedTx {
@@ -463,7 +441,7 @@ struct FifoCalculator {
                     }
                 }
             case .dividend:
-                let retrieved = tx.units * tx.pricePerUnit * txRate
+                let retrieved = tx.amount * txRate
                 realizedPl += retrieved
             }
         }
@@ -544,7 +522,7 @@ struct FifoCalculator {
                 
                 realizedProfits[transaction.persistentModelID] = realizedProfitLoss
             case .dividend:
-                realizedProfits[transaction.persistentModelID] = transaction.units * transaction.pricePerUnit
+                realizedProfits[transaction.persistentModelID] = transaction.amount
             }
         }
         
@@ -585,7 +563,7 @@ struct FifoCalculator {
                 
                 realizedProfits[transaction.persistentModelID] = realizedProfitLoss
             case .dividend:
-                realizedProfits[transaction.persistentModelID] = transaction.units * transaction.pricePerUnit * txRate
+                realizedProfits[transaction.persistentModelID] = transaction.amount * txRate
             }
         }
         

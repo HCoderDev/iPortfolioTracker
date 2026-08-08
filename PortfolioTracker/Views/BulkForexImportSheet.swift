@@ -386,9 +386,15 @@ struct BulkForexImportSheet: View {
                                                 
                                                 ForEach(row.matchedTxs) { item in
                                                     HStack {
-                                                        Text("• \(item.tx.asset?.name ?? "Asset") (\(item.tx.type.rawValue)): \(item.tx.units.formatted2) units")
-                                                            .font(.caption2)
-                                                            .foregroundStyle(.primary)
+                                                        if item.tx.config.isUnitBased {
+                                                            Text("• \(item.tx.asset?.name ?? "Asset") (\(item.tx.type.rawValue)): \(item.tx.units.formatted2) units")
+                                                                .font(.caption2)
+                                                                .foregroundStyle(.primary)
+                                                        } else {
+                                                            Text("• \(item.tx.asset?.name ?? "Asset") (\(item.tx.type.rawValue)): \(item.tx.amount.formatted2)")
+                                                                .font(.caption2)
+                                                                .foregroundStyle(.primary)
+                                                        }
                                                         Spacer()
                                                         if item.isAlreadyMatching, let rate = item.resolvedRate {
                                                             Text("Already Matching (₹\(rate.formatted2))")

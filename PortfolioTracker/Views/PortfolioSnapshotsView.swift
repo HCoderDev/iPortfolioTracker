@@ -249,7 +249,7 @@ struct PortfolioSnapshotsView: View {
                 
                 let invested: Double
                 if asset.holdingType.isNonUnitized {
-                    let totalInterest = filteredTx.filter { $0.type == .dividend }.reduce(0.0) { $0 + $1.pricePerUnit }
+                    let totalInterest = filteredTx.filter { $0.type == .dividend }.reduce(0.0) { $0 + $1.amount }
                     invested = max(0, asset.currentPrice - totalInterest)
                 } else {
                     invested = FifoCalculator.calculate(transactions: filteredTx).holdings.reduce(0.0) { partialResult, lot in
@@ -262,7 +262,7 @@ struct PortfolioSnapshotsView: View {
                 let investedINR = asset.holdingType.isNonUnitized ? {
                     let totalInterest = filteredTx.filter { $0.type == .dividend }.reduce(0.0) { sum, tx in
                         let txRate = tx.inrExchangeRate ?? rate
-                        return sum + (tx.pricePerUnit * txRate)
+                        return sum + (tx.amount * txRate)
                     }
                     let currentValueInINR = asset.currentPrice * rate
                     return max(0, currentValueInINR - totalInterest)
@@ -373,7 +373,7 @@ struct TakeSnapshotSheet: View {
                 if asset.holdingType.isNonUnitized {
                     let totalInterest = filteredTx.filter { $0.type == .dividend }.reduce(0.0) { sum, tx in
                         let txRate = tx.inrExchangeRate ?? rate
-                        return sum + (tx.pricePerUnit * txRate)
+                        return sum + (tx.amount * txRate)
                     }
                     let currentValueInINR = asset.currentPrice * rate
                     invested = max(0, currentValueInINR - totalInterest)

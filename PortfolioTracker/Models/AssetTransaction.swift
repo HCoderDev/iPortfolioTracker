@@ -50,13 +50,21 @@ final class AssetTransaction {
     
     var amount: Double {
         get {
-            units * pricePerUnit
+            if type == .dividend || !config.isUnitBased {
+                return pricePerUnit
+            }
+            return units * pricePerUnit
         }
         set {
-            if units == 0 {
-                units = 1.0
+            if type == .dividend || !config.isUnitBased {
+                units = 0.0
+                pricePerUnit = newValue
+            } else {
+                if units == 0 {
+                    units = 1.0
+                }
+                pricePerUnit = newValue / units
             }
-            pricePerUnit = newValue / units
         }
     }
     
@@ -67,7 +75,7 @@ final class AssetTransaction {
     init(
         type: TransactionType = .buy,
         rawType: String? = nil,
-        units: Double = 1.0,
+        units: Double? = nil,
         pricePerUnit: Double,
         date: Date = Date(),
         notes: String? = nil,
@@ -76,9 +84,23 @@ final class AssetTransaction {
         broker: Broker? = nil,
         inrExchangeRate: Double? = nil
     ) {
-        self.type = type
-        self.rawTypeRaw = rawType ?? type.rawValue
-        self.units = units
+        let rType = rawType ?? type.rawValue
+        self.rawTypeRaw = rType
+        var resolvedType = type
+        if let legacy = TransactionType(rawValue: rType) {
+            resolvedType = legacy
+        } else if rType.uppercased().contains("SELL") || rType.uppercased().contains("WITHDRAWAL") || rType.uppercased().contains("MATURITY") {
+            resolvedType = .sell
+        } else if rType.uppercased().contains("DIVIDEND") || rType.uppercased().contains("INTEREST") || rType.uppercased().contains("BONUS") {
+            resolvedType = .dividend
+        }
+        self.type = resolvedType
+        let cfg = TransactionTypeRegistry.config(for: rType, holdingType: asset?.holdingType)
+        if let customUnits = units {
+            self.units = (resolvedType == .dividend || !cfg.isUnitBased) ? 0.0 : customUnits
+        } else {
+            self.units = (resolvedType == .dividend || !cfg.isUnitBased) ? 0.0 : 1.0
+        }
         self.pricePerUnit = pricePerUnit
         self.date = date
         self.notes = notes

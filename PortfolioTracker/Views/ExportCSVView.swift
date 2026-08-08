@@ -2,8 +2,6 @@
 //  ExportCSVView.swift
 //  PortfolioTracker
 //
-//  Created by Antigravity on 17/07/26.
-//
 
 import SwiftUI
 import SwiftData
@@ -14,6 +12,9 @@ struct ShareSheet: UIViewControllerRepresentable {
     
     func makeUIViewController(context: Context) -> UIActivityViewController {
         let controller = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        if let popover = controller.popoverPresentationController {
+            popover.sourceView = UIView()
+        }
         return controller
     }
     
@@ -28,6 +29,10 @@ struct ExportCSVView: View {
     @State private var searchText = ""
     @State private var shareItemURL: URL? = nil
     @State private var showShareSheet = false
+    
+    @State private var exportDocument = CSVDocument()
+    @State private var exportFilename = "Export.csv"
+    @State private var showFileExporter = false
     
     private var filteredAssets: [Asset] {
         if searchText.isEmpty {
@@ -83,6 +88,42 @@ struct ExportCSVView: View {
             .padding(.horizontal)
             .padding(.top, 12)
             .padding(.bottom, 8)
+            
+            // Download Sample Templates Section
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Download Sample Import Templates")
+                    .font(.subheadline)
+                    .fontWeight(.bold)
+                    .padding(.horizontal)
+                
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(HoldingType.allCases) { type in
+                            Button {
+                                let csvText = ImportTemplateGenerator.generateTemplateCSV(for: type)
+                                exportDocument = CSVDocument(text: csvText)
+                                exportFilename = "Import_Template_\(type.rawValue.lowercased()).csv"
+                                showFileExporter = true
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "arrow.down.doc.fill")
+                                        .font(.caption)
+                                    Text("\(type.displayName) Template")
+                                        .font(.caption)
+                                        .fontWeight(.semibold)
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(AppTheme.accent.opacity(0.1))
+                                .foregroundStyle(AppTheme.accent)
+                                .clipShape(Capsule())
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+            }
+            .padding(.vertical, 6)
             
             // Search bar
             HStack {
@@ -170,6 +211,19 @@ struct ExportCSVView: View {
                 ShareSheet(items: [url])
             }
         }
+        .fileExporter(
+            isPresented: $showFileExporter,
+            document: exportDocument,
+            contentType: .commaSeparatedText,
+            defaultFilename: exportFilename
+        ) { result in
+            switch result {
+            case .success(let url):
+                print("Saved template to: \(url)")
+            case .failure(let err):
+                print("Failed to save template: \(err.localizedDescription)")
+            }
+        }
     }
     
     private func generateMasterCSVURL() -> URL? {
@@ -190,10 +244,11 @@ struct ExportCSVView: View {
             let currencyCode = tx.asset?.category?.currencyCode ?? "USD"
             let rate = tx.inrExchangeRate ?? (tx.asset?.category?.lastInrExchangeRate ?? 1.0)
             
-            let amountNative = tx.units * tx.pricePerUnit
+            let amountNative = tx.amount
             let amountINR = amountNative * rate
+            let unitsStr = tx.config.isUnitBased ? tx.units.formatted2 : "0"
             
-            let line = "\"\(assetName)\",\"\(ticker)\",\"\(catName)\",\"\(currencyCode)\",\"\(tx.type.rawValue)\",\"\(dateFormatter.string(from: tx.date))\",\(tx.units.formatted2),\(tx.pricePerUnit.formatted2),\(amountNative.formatted2),\(rate.formatted2),\(amountINR.formatted2)\n"
+            let line = "\"\(assetName)\",\"\(ticker)\",\"\(catName)\",\"\(currencyCode)\",\"\(tx.type.rawValue)\",\"\(dateFormatter.string(from: tx.date))\",\(unitsStr),\(tx.pricePerUnit.formatted2),\(amountNative.formatted2),\(rate.formatted2),\(amountINR.formatted2)\n"
             csvContent.append(line)
         }
         

@@ -82,6 +82,7 @@ final class Asset {
     var holdingTypeRaw: String? = "investment"
     
     // Metadata for non-unitized assets (FD, EPF, Post Office, LIC)
+    var isCompletedRaw: Bool? = false
     var interestRateRaw: Double? = nil
     var principalAmountRaw: Double? = nil
     var maturityDateRaw: Date? = nil
@@ -90,6 +91,11 @@ final class Asset {
     var premiumTermYearsRaw: Int? = nil
     var policyNumberRaw: String? = nil
     var institutionNameRaw: String? = nil
+    
+    var isCompleted: Bool {
+        get { isCompletedRaw ?? false }
+        set { isCompletedRaw = newValue }
+    }
     
     // Ticker / Symbol for Stock / MF / US Stock (optional)
     var tickerRaw: String? = ""

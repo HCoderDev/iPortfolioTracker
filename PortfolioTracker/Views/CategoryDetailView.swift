@@ -68,7 +68,7 @@ struct CategoryDetailView: View {
         return soldOffAssets.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
     }
     
-    private var summaryData: (invested: Double, currentValue: Double, unrealizedGL: Double, realizedPL: Double, totalPL: Double, xirr: Double?, lifetimeInvested: Double, lifetimeRetrieved: Double) {
+    private var summaryData: (invested: Double, currentValue: Double, unrealizedGL: Double, realizedPL: Double, totalPL: Double, xirr: Double?, lifetimeInvested: Double, lifetimeRetrieved: Double, lifetimeDividend: Double) {
         let isConversionActive = category.currencyCode != "INR" && category.isConvertToInr
         let rate = PortfolioMetrics.currentInrExchangeRate(for: category, currencies: currencies)
         
@@ -77,6 +77,7 @@ struct CategoryDetailView: View {
         var totalRealizedPL = 0.0
         var totalLifetimeInvested = 0.0
         var totalLifetimeRetrieved = 0.0
+        var totalLifetimeDividend = 0.0
         var allCashFlows: [CashFlow] = []
         
         for asset in allAssets {
@@ -84,24 +85,28 @@ struct CategoryDetailView: View {
                 let currentValue = PortfolioMetrics.currentValueInINR(for: asset, rate: rate)
                 let invested = PortfolioMetrics.investedValueInINR(for: asset, rate: rate)
                 let fifoResult = FifoCalculator.calculateInINR(transactions: asset.transactions, categoryExchangeRate: rate)
+                let div = PortfolioMetrics.lifetimeDividendInINR(for: asset, rate: rate)
                 
                 totalInvested += invested
                 totalCurrentValue += currentValue
                 totalRealizedPL += fifoResult.realizedProfitLoss
                 totalLifetimeInvested += fifoResult.lifetimeInvested
                 totalLifetimeRetrieved += fifoResult.lifetimeRetrieved
+                totalLifetimeDividend += div
                 
                 allCashFlows.append(contentsOf: PortfolioMetrics.cashFlowsInINR(for: asset, rate: rate))
             } else {
                 let currentValue = PortfolioMetrics.currentValue(for: asset)
                 let invested = PortfolioMetrics.investedValue(for: asset)
                 let fifoResult = FifoCalculator.calculate(transactions: asset.transactions)
+                let div = PortfolioMetrics.lifetimeDividend(for: asset)
                 
                 totalInvested += invested
                 totalCurrentValue += currentValue
                 totalRealizedPL += fifoResult.realizedProfitLoss
                 totalLifetimeInvested += fifoResult.lifetimeInvested
                 totalLifetimeRetrieved += fifoResult.lifetimeRetrieved
+                totalLifetimeDividend += div
                 
                 allCashFlows.append(contentsOf: PortfolioMetrics.cashFlows(for: asset))
             }
@@ -110,7 +115,7 @@ struct CategoryDetailView: View {
         let unrealizedGL = totalCurrentValue - totalInvested
         let totalPL = unrealizedGL + totalRealizedPL
         let xirr = XirrCalculator.calculateXirr(cashFlows: allCashFlows)
-        return (totalInvested, totalCurrentValue, unrealizedGL, totalRealizedPL, totalPL, xirr, totalLifetimeInvested, totalLifetimeRetrieved)
+        return (totalInvested, totalCurrentValue, unrealizedGL, totalRealizedPL, totalPL, xirr, totalLifetimeInvested, totalLifetimeRetrieved, totalLifetimeDividend)
     }
     
     private var assetAllocation: [PieSlice] {
@@ -556,7 +561,7 @@ struct CategoryDetailView: View {
     // MARK: - Summary Card
     
     @ViewBuilder
-    private func summaryCard(data: (invested: Double, currentValue: Double, unrealizedGL: Double, realizedPL: Double, totalPL: Double, xirr: Double?, lifetimeInvested: Double, lifetimeRetrieved: Double)) -> some View {
+    private func summaryCard(data: (invested: Double, currentValue: Double, unrealizedGL: Double, realizedPL: Double, totalPL: Double, xirr: Double?, lifetimeInvested: Double, lifetimeRetrieved: Double, lifetimeDividend: Double)) -> some View {
         let isConversionActive = category.currencyCode != "INR" && (category.convertToInr ?? false)
         let activeCurrency = isConversionActive ? "INR" : category.currencyCode
         let activeSymbol = activeCurrency == "INR" ? "₹" : (activeCurrency == "USD" ? "$" : "")
@@ -661,6 +666,19 @@ struct CategoryDetailView: View {
                         .fontWeight(.bold)
                         .foregroundStyle(.white)
                 }
+            }
+            
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Lifetime Dividends")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.7))
+                    Text("\(activeSymbol)\(data.lifetimeDividend.formattedComma)")
+                        .font(.headline)
+                        .fontWeight(.bold)
+                        .foregroundStyle(.orange)
+                }
+                Spacer()
             }
             
             let categoryTxs = allAssets.flatMap { $0.transactions }

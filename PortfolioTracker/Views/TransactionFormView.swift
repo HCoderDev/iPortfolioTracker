@@ -93,7 +93,7 @@ struct TransactionFormView: View {
         if isUnitized {
             return Double(unitsInput) ?? 1.0
         }
-        return 1.0
+        return 0.0
     }
     
     private var parsedPricePerUnit: Double {

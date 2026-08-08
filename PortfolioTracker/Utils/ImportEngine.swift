@@ -93,19 +93,99 @@ struct ImportEngine {
     
     // MARK: - Transaction Type Inference
     
-    static func inferTxType(_ raw: String) -> TransactionType? {
+    static func inferRawTxType(_ raw: String, holdingType: HoldingType) -> String? {
         let cleaned = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !cleaned.isEmpty else { return nil }
         
-        if cleaned == "buy" || cleaned == "bought" || cleaned == "b" || cleaned == "purchase" || cleaned == "cr" || cleaned == "credit" {
-            return .buy
-        } else if cleaned == "sell" || cleaned == "sold" || cleaned == "s" || cleaned == "sale" || cleaned == "dr" || cleaned == "debit" {
-            return .sell
-        } else if cleaned == "dividend" || cleaned == "div" || cleaned == "divd" || cleaned == "payout" || cleaned == "yield" {
-            return .dividend
+        switch holdingType {
+        case .epf:
+            if cleaned.contains("employee") || cleaned.contains("ee") || cleaned.contains("pf contribution") || cleaned.contains("member") || cleaned.contains("emp contribution") {
+                return "EMPLOYEE_CONTRIBUTION"
+            } else if cleaned.contains("employer") || cleaned.contains("er") || cleaned.contains("company match") || cleaned.contains("company") || cleaned.contains("matching") {
+                return "EMPLOYER_CONTRIBUTION"
+            } else if cleaned.contains("interest") || cleaned.contains("int") {
+                return "INTEREST"
+            } else if cleaned.contains("withdraw") || cleaned.contains("advance") || cleaned.contains("claim") {
+                return "WITHDRAWAL"
+            } else if cleaned.contains("settlement") || cleaned.contains("transfer") || cleaned.contains("maturity") {
+                return "MATURITY"
+            }
+            
+        case .fixedDeposit:
+            if cleaned.contains("principal") || cleaned.contains("deposit") || cleaned.contains("installment") || cleaned.contains("opening") {
+                return "DEPOSIT"
+            } else if cleaned.contains("payout") || cleaned.contains("credit to bank") {
+                return "INTEREST_PAYOUT"
+            } else if cleaned.contains("interest") || cleaned.contains("int") || cleaned.contains("compounding") {
+                return "INTEREST"
+            } else if cleaned.contains("withdraw") || cleaned.contains("premature") || cleaned.contains("partial") {
+                return "WITHDRAWAL"
+            } else if cleaned.contains("maturity") || cleaned.contains("closure") || cleaned.contains("full payout") {
+                return "MATURITY"
+            }
+            
+        case .insuranceAnnuity:
+            if cleaned.contains("premium") || cleaned.contains("policy premium") || cleaned.contains("payment") {
+                return "PREMIUM"
+            } else if cleaned.contains("bonus") || cleaned.contains("reversionary") {
+                return "BONUS"
+            } else if cleaned.contains("survival") || cleaned.contains("money back") || cleaned.contains("periodic") {
+                return "SURVIVAL_BENEFIT"
+            } else if cleaned.contains("surrender") || cleaned.contains("cancellation") {
+                return "SURRENDER"
+            } else if cleaned.contains("maturity") || cleaned.contains("claim") {
+                return "MATURITY"
+            }
+            
+        case .postOffice:
+            if cleaned.contains("deposit") || cleaned.contains("contribution") || cleaned.contains("ppf") || cleaned.contains("ssy") {
+                return "CONTRIBUTION"
+            } else if cleaned.contains("interest") || cleaned.contains("int") {
+                return "INTEREST"
+            } else if cleaned.contains("withdraw") || cleaned.contains("partial") {
+                return "WITHDRAWAL"
+            } else if cleaned.contains("maturity") || cleaned.contains("closure") {
+                return "MATURITY"
+            }
+            
+        case .bankBalance:
+            if cleaned.contains("deposit") || cleaned.contains("add") || cleaned.contains("credit") || cleaned.contains("cr") || cleaned.contains("savings") {
+                return "DEPOSIT"
+            } else if cleaned.contains("interest") || cleaned.contains("int") {
+                return "INTEREST"
+            } else if cleaned.contains("withdraw") || cleaned.contains("debit") || cleaned.contains("dr") || cleaned.contains("spent") {
+                return "WITHDRAWAL"
+            }
+            
+        case .investment:
+            if cleaned == "buy" || cleaned == "bought" || cleaned == "b" || cleaned.contains("purchase") || cleaned == "cr" || cleaned == "credit" {
+                return "BUY"
+            } else if cleaned == "sell" || cleaned == "sold" || cleaned == "s" || cleaned.contains("sale") || cleaned == "dr" || cleaned == "debit" {
+                return "SELL"
+            } else if cleaned == "dividend" || cleaned == "div" || cleaned == "divd" || cleaned.contains("payout") || cleaned == "yield" {
+                return "DIVIDEND"
+            }
         }
         
+        // Fallback checks across any holding type
+        if cleaned.contains("employee") { return "EMPLOYEE_CONTRIBUTION" }
+        if cleaned.contains("employer") { return "EMPLOYER_CONTRIBUTION" }
+        if cleaned.contains("premium") { return "PREMIUM" }
+        if cleaned.contains("principal") || cleaned.contains("deposit") { return "DEPOSIT" }
+        if cleaned.contains("interest") { return "INTEREST" }
+        if cleaned.contains("bonus") { return "BONUS" }
+        if cleaned.contains("maturity") { return "MATURITY" }
+        if cleaned.contains("withdraw") { return "WITHDRAWAL" }
+        if cleaned.contains("buy") || cleaned.contains("bought") { return "BUY" }
+        if cleaned.contains("sell") || cleaned.contains("sold") { return "SELL" }
+        if cleaned.contains("dividend") { return "DIVIDEND" }
+        
         return nil
+    }
+    
+    static func inferTxType(_ raw: String) -> TransactionType? {
+        guard let rawType = inferRawTxType(raw, holdingType: .investment) else { return nil }
+        return TransactionType(rawValue: rawType)
     }
     
     // MARK: - Asset Name Fuzzy & Brand Match Helper

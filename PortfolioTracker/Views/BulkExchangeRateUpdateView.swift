@@ -157,9 +157,15 @@ struct BulkExchangeRateUpdateView: View {
                                                         .clipShape(Capsule())
                                                 }
                                                 
-                                                Text("\(tx.units.formatted2) units @ \(currencySymbol(for: group.currencyCode))\(tx.pricePerUnit.formatted2)")
-                                                    .font(.caption)
-                                                    .foregroundStyle(.secondary)
+                                                if tx.config.isUnitBased {
+                                                    Text("\(tx.units.formatted2) units @ \(currencySymbol(for: group.currencyCode))\(tx.pricePerUnit.formatted2)")
+                                                        .font(.caption)
+                                                        .foregroundStyle(.secondary)
+                                                } else {
+                                                    Text("Amount: \(currencySymbol(for: group.currencyCode))\(tx.amount.formatted2)")
+                                                        .font(.caption)
+                                                        .foregroundStyle(.secondary)
+                                                }
                                             }
                                             
                                             Spacer()

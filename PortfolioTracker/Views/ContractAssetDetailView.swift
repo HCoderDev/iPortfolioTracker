@@ -77,6 +77,46 @@ struct ContractAssetDetailView: View {
         PortfolioMetrics.xirr(for: asset)
     }
     
+    private var lifetimeInvested: Double {
+        if isConversionActive {
+            return PortfolioMetrics.lifetimeInvestedInINR(for: asset, rate: currentRate)
+        } else {
+            return PortfolioMetrics.lifetimeInvested(for: asset)
+        }
+    }
+    
+    private var lifetimeRetrieved: Double {
+        if isConversionActive {
+            return PortfolioMetrics.lifetimeRetrievedInINR(for: asset, rate: currentRate)
+        } else {
+            return PortfolioMetrics.lifetimeRetrieved(for: asset)
+        }
+    }
+    
+    private var lifetimeDividend: Double {
+        if isConversionActive {
+            return PortfolioMetrics.lifetimeDividendInINR(for: asset, rate: currentRate)
+        } else {
+            return PortfolioMetrics.lifetimeDividend(for: asset)
+        }
+    }
+    
+    private var xirrValue: Double? {
+        if isConversionActive {
+            return PortfolioMetrics.xirrInINR(for: asset, rate: currentRate)
+        } else {
+            return PortfolioMetrics.xirr(for: asset)
+        }
+    }
+    
+    private var totalGainLoss: Double {
+        (totalBalance + lifetimeRetrieved) - lifetimeInvested
+    }
+    
+    private var overallGainLossPercentage: Double {
+        lifetimeInvested > 0 ? (totalGainLoss / lifetimeInvested) * 100.0 : 0.0
+    }
+    
     private var daysToMaturityText: String {
         guard let mat = asset.maturityDate else { return "N/A" }
         let days = Calendar.current.dateComponents([.day], from: Date(), to: mat).day ?? 0
@@ -203,6 +243,18 @@ struct ContractAssetDetailView: View {
                         .background(Color.orange.opacity(0.15))
                         .foregroundStyle(.orange)
                         .clipShape(Capsule())
+                    
+                    let isClosed = PortfolioMetrics.isSoldOff(asset)
+                    HStack(spacing: 4) {
+                        Circle().fill(isClosed ? Color.gray : Color.green).frame(width: 6, height: 6)
+                        Text(isClosed ? "COMPLETED" : "ACTIVE POLICY")
+                            .font(.system(size: 9, weight: .bold))
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(isClosed ? Color.gray.opacity(0.15) : Color.green.opacity(0.15))
+                    .foregroundStyle(isClosed ? Color.secondary : Color.green)
+                    .clipShape(Capsule())
                 }
                 
                 if !asset.institutionName.isEmpty {
@@ -213,18 +265,35 @@ struct ContractAssetDetailView: View {
             }
             Spacer()
             
-            if isNonRupeeAsset {
-                Button(action: { displayInINR.toggle() }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "arrow.left.arrow.right.circle.fill")
-                        Text(displayInINR ? "INR (₹)" : "\(categoryCurrencyCode)")
-                            .fontWeight(.semibold)
+            HStack(spacing: 10) {
+                Menu {
+                    Button {
+                        asset.isCompleted.toggle()
+                    } label: {
+                        Label(
+                            asset.isCompleted ? "Mark as Active Policy" : "Mark as Completed / Matured",
+                            systemImage: asset.isCompleted ? "arrow.clockwise" : "flag.checkered"
+                        )
                     }
-                    .font(.caption)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Color.blue.opacity(0.12))
-                    .clipShape(Capsule())
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.title3)
+                        .foregroundStyle(AppTheme.accent)
+                }
+                
+                if isNonRupeeAsset {
+                    Button(action: { displayInINR.toggle() }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.left.arrow.right.circle.fill")
+                            Text(displayInINR ? "INR (₹)" : "\(categoryCurrencyCode)")
+                                .fontWeight(.semibold)
+                        }
+                        .font(.caption)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.blue.opacity(0.12))
+                        .clipShape(Capsule())
+                    }
                 }
             }
         }
@@ -233,15 +302,37 @@ struct ContractAssetDetailView: View {
     
     private var heroMetricsDashboard: some View {
         VStack(spacing: 12) {
+            let isClosed = PortfolioMetrics.isSoldOff(asset)
+            
+            if isClosed {
+                HStack(spacing: 10) {
+                    Image(systemName: "flag.checkered.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Policy Completed / Paid Out")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(.primary)
+                        Text("Current balance is ₹0.00 (Excluded from active net worth). All historical premiums, bonuses, & maturity returns are preserved below.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(12)
+                .background(Color.gray.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .padding(.horizontal)
+            }
+            
             VStack(spacing: 12) {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Current Account Valuation")
+                        Text(isClosed ? "Current Active Valuation" : "Current Account Valuation")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Text("\(currencySymbol)\(formattedVal(totalBalance))")
                             .font(.system(size: 30, weight: .bold, design: .rounded))
-                            .foregroundStyle(AppTheme.accent)
+                            .foregroundStyle(isClosed ? .secondary : AppTheme.accent)
                     }
                     Spacer()
                     VStack(alignment: .trailing, spacing: 4) {
@@ -265,7 +356,7 @@ struct ContractAssetDetailView: View {
                 
                 HStack(spacing: 16) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Capital Invested")
+                        Text(isClosed ? "Active Invested Capital" : "Capital Invested")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                         Text("\(currencySymbol)\(formattedVal(capitalInvested))")
@@ -390,23 +481,54 @@ struct ContractAssetDetailView: View {
                 .padding(.horizontal)
             }
             
-            // Contract Inception & Duration
+            // Contract Inception & Recency
             VStack(alignment: .leading, spacing: 12) {
-                Text("Contract History")
+                Text("Contract History & Recency")
                     .font(.headline)
                     .padding(.horizontal)
                 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("First Deposit / Contribution Date")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(inceptionDateText)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
+                VStack(spacing: 12) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Last Contribution Date")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(PortfolioMetrics.lastInvestedFormattedText(for: asset))
+                                .font(.subheadline)
+                                .fontWeight(.bold)
+                                .foregroundStyle(.primary)
+                        }
+                        Spacer()
+                        
+                        let status = PortfolioMetrics.recencyStatus(for: asset)
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(status.color)
+                                .frame(width: 8, height: 8)
+                            Text(status.rawValue)
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(status.color)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(status.color.opacity(0.12))
+                        .clipShape(Capsule())
+                    }
+                    
+                    Divider()
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("First Deposit / Contribution Date")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(inceptionDateText)
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
-                .background(RoundedRectangle(cornerRadius: 12).fill(Color(.secondarySystemBackground)))
+                .background(RoundedRectangle(cornerRadius: 14).fill(Color(.secondarySystemBackground)))
                 .padding(.horizontal)
             }
             
@@ -425,28 +547,103 @@ struct ContractAssetDetailView: View {
             }
             .padding(.horizontal)
             
-            // Recent Transactions Preview
+            // Lifetime Capital Flow Card
             VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("Recent Entries")
-                        .font(.headline)
-                    Spacer()
-                    Button("View All") { selectedTab = .transactions }
-                        .font(.caption)
+                Text("Lifetime Cash Flow")
+                    .font(.headline)
+                    .padding(.horizontal)
+                
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Lifetime Invested")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("\(currencySymbol)\(formattedVal(lifetimeInvested))")
+                            .font(.title3)
+                            .fontWeight(.bold)
+                            .foregroundStyle(.primary)
+                        Text("Total Capital Invested")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Color(.secondarySystemBackground)))
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Lifetime Retrieved")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("\(currencySymbol)\(formattedVal(lifetimeRetrieved))")
+                            .font(.title3)
+                            .fontWeight(.bold)
+                            .foregroundStyle(AppTheme.gain)
+                        Text("Payouts / Returns")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Color(.secondarySystemBackground)))
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Lifetime Dividends / Interest")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("\(currencySymbol)\(formattedVal(lifetimeDividend))")
+                            .font(.title3)
+                            .fontWeight(.bold)
+                            .foregroundStyle(.orange)
+                        Text("Payouts Received")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Color(.secondarySystemBackground)))
                 }
                 .padding(.horizontal)
+            }
+            
+            // Overall Performance Card
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Overall Performance")
+                    .font(.headline)
+                    .padding(.horizontal)
                 
-                let recent = Array(PortfolioMetrics.reverseOrderedTransactions(asset.transactions).prefix(5))
-                if recent.isEmpty {
-                    Text("No contract entries recorded yet.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal)
-                } else {
-                    ForEach(recent) { tx in
-                        contractTransactionRow(tx)
+                VStack(spacing: 12) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Overall Gain / Loss")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text("\(totalGainLoss >= 0 ? "+" : "")\(currencySymbol)\(formattedVal(totalGainLoss)) (\(formattedVal(overallGainLossPercentage))%)")
+                                .font(.title3)
+                                .fontWeight(.bold)
+                                .foregroundStyle(totalGainLoss >= 0 ? AppTheme.gain : AppTheme.loss)
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text("Overall XIRR")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            if let xirr = xirrValue {
+                                Text(String(format: "%.2f%%", xirr * 100))
+                                    .font(.title3)
+                                    .fontWeight(.bold)
+                                    .foregroundStyle(xirr >= 0 ? AppTheme.gain : AppTheme.loss)
+                            } else {
+                                Text("N/A")
+                                    .font(.title3)
+                                    .fontWeight(.bold)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                     }
                 }
+                .padding()
+                .background(RoundedRectangle(cornerRadius: 14).fill(Color(.secondarySystemBackground)))
+                .padding(.horizontal)
             }
         }
     }
@@ -561,9 +758,11 @@ struct ContractAssetDetailView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     
-                    Text("• \(durationText)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                    if tx.type == .buy || tx.config.cashDirection == .outflow {
+                        Text("• \(durationText)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             
@@ -585,6 +784,31 @@ struct ContractAssetDetailView: View {
         .contentShape(Rectangle())
         .onTapGesture {
             transactionToEdit = tx
+        }
+        .contextMenu {
+            Button {
+                transactionToEdit = tx
+            } label: {
+                Label("Edit Entry", systemImage: "pencil")
+            }
+            Button(role: .destructive) {
+                modelContext.delete(tx)
+            } label: {
+                Label("Delete Entry", systemImage: "trash")
+            }
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) {
+                modelContext.delete(tx)
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+            Button {
+                transactionToEdit = tx
+            } label: {
+                Label("Edit", systemImage: "pencil")
+            }
+            .tint(.blue)
         }
     }
     

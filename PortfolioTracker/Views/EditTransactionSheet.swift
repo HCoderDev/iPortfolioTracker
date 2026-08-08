@@ -7,6 +7,7 @@ import SwiftUI
 import SwiftData
 
 struct EditTransactionSheet: View {
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \Broker.name) private var brokers: [Broker]
     
@@ -20,6 +21,7 @@ struct EditTransactionSheet: View {
     @State private var selectedDate: Date = Date()
     @State private var selectedBroker: Broker?
     @State private var inrExchangeRate: String = ""
+    @State private var showDeleteConfirmation = false
     
     private var asset: Asset? {
         transaction.asset
@@ -97,6 +99,19 @@ struct EditTransactionSheet: View {
                             .keyboardType(.decimalPad)
                     }
                 }
+                
+                Section {
+                    Button(role: .destructive) {
+                        showDeleteConfirmation = true
+                    } label: {
+                        HStack {
+                            Spacer()
+                            Label("Delete Transaction", systemImage: "trash")
+                                .fontWeight(.semibold)
+                            Spacer()
+                        }
+                    }
+                }
             }
             .navigationTitle("Edit Transaction")
             .navigationBarTitleDisplayMode(.inline)
@@ -111,6 +126,15 @@ struct EditTransactionSheet: View {
                     }
                     .disabled(!isValid)
                 }
+            }
+            .confirmationDialog("Delete Transaction?", isPresented: $showDeleteConfirmation, titleVisibility: .visible) {
+                Button("Delete Transaction", role: .destructive) {
+                    modelContext.delete(transaction)
+                    dismiss()
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("Are you sure you want to delete this transaction? This action cannot be undone.")
             }
             .onAppear {
                 selectedConfig = transaction.config
@@ -140,7 +164,7 @@ struct EditTransactionSheet: View {
             transaction.units = Double(unitsInput) ?? 1.0
             transaction.pricePerUnit = Double(pricePerUnitInput) ?? amt
         } else {
-            transaction.units = 1.0
+            transaction.units = 0.0
             transaction.pricePerUnit = amt
         }
         

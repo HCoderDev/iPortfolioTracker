@@ -187,6 +187,7 @@ struct CategoryFormSheet: View {
     @State private var name: String = ""
     @State private var selectedCurrencyCode: String = ""
     @State private var isIndividualEquity: Bool = false
+    @State private var ltcgThresholdMonths: Int = 12
     @State private var hasUpdatedDate: Bool = false
     @State private var lastUpdatedDate: Date = Date()
     
@@ -211,6 +212,19 @@ struct CategoryFormSheet: View {
                     
                     Toggle("Is Individual Equity Category", isOn: $isIndividualEquity)
                         .tint(AppTheme.accent)
+                }
+                
+                Section("Tax & Capital Gains Threshold") {
+                    Picker("LTCG Holding Duration", selection: $ltcgThresholdMonths) {
+                        Text("1 Year (12 months) — e.g. Indian Equity / MF").tag(12)
+                        Text("2 Years (24 months) — e.g. US Stocks / Unlisted").tag(24)
+                        Text("3 Years (36 months) — e.g. Debt MFs / Gold").tag(36)
+                        Text("6 Months (6 months)").tag(6)
+                    }
+                    
+                    Text("Assets in this category held longer than \(ltcgThresholdMonths) months qualify for Long Term Capital Gains (LTCG). Assets held for \(ltcgThresholdMonths) months or less qualify as STCG.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 
                 Section("Data Freshness / Updated Up To") {
@@ -265,6 +279,7 @@ struct CategoryFormSheet: View {
                     name = category.name
                     selectedCurrencyCode = category.currencyCode
                     isIndividualEquity = category.isIndividualEquity ?? false
+                    ltcgThresholdMonths = category.ltcgMonths
                     if let date = category.lastUpdatedDate {
                         hasUpdatedDate = true
                         lastUpdatedDate = date
@@ -275,6 +290,7 @@ struct CategoryFormSheet: View {
                 } else {
                     selectedCurrencyCode = defaultCurrency?.code ?? ""
                     isIndividualEquity = false
+                    ltcgThresholdMonths = 12
                     hasUpdatedDate = true
                     lastUpdatedDate = Date()
                 }
@@ -292,13 +308,15 @@ struct CategoryFormSheet: View {
             category.name = trimmedName
             category.currencyCode = selectedCurrencyCode
             category.isIndividualEquity = isIndividualEquity
+            category.ltcgThresholdMonths = ltcgThresholdMonths
             category.lastUpdatedDate = finalUpdatedDate
         } else {
             let newCategory = Category(
                 name: trimmedName,
                 currencyCode: selectedCurrencyCode,
                 isIndividualEquity: isIndividualEquity,
-                lastUpdatedDate: finalUpdatedDate
+                lastUpdatedDate: finalUpdatedDate,
+                ltcgThresholdMonths: ltcgThresholdMonths
             )
             modelContext.insert(newCategory)
         }

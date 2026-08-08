@@ -246,9 +246,24 @@ struct AssetRowContent: View {
                     .clipShape(Capsule())
             }
             
-            Text("Category: \(asset.category?.name ?? "Uncategorized")")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                Text("Category: \(asset.category?.name ?? "Uncategorized")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                
+                let status = PortfolioMetrics.recencyStatus(for: asset)
+                HStack(spacing: 3) {
+                    Circle().fill(status.color).frame(width: 5, height: 5)
+                    Text("Last Buy: \(PortfolioMetrics.lastInvestedFormattedText(for: asset))")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(status.color)
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(status.color.opacity(0.12))
+                .clipShape(Capsule())
+            }
+            
             Text(subtitleText)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -289,6 +304,7 @@ struct AssetFormSheet: View {
     @State private var premiumTermYearsStr: String = ""
     @State private var policyNumber: String = ""
     @State private var institutionName: String = ""
+    @State private var isCompleted: Bool = false
     
     var body: some View {
         NavigationStack {
@@ -419,6 +435,9 @@ struct AssetFormSheet: View {
                         
                         TextField("Current Cash / Surrender Value", text: $currentBalanceStr)
                             .keyboardType(.decimalPad)
+                        
+                        Toggle("Policy Completed / Matured / Surrendered", isOn: $isCompleted)
+                            .tint(AppTheme.accent)
                     }
                 }
                 
@@ -451,6 +470,7 @@ struct AssetFormSheet: View {
                     selectedCategory = asset.category
                     selectedSubCategory = asset.subCategory
                     selectedHoldingType = asset.holdingType
+                    isCompleted = asset.isCompleted
                     currentBalanceStr = asset.currentPrice > 0 ? "\(asset.currentPrice.formattedPlain)" : ""
                     principalAmountStr = asset.principalAmount > 0 ? "\(asset.principalAmount.formattedPlain)" : ""
                     interestRateStr = asset.interestRate > 0 ? "\(asset.interestRate)" : ""
@@ -492,6 +512,7 @@ struct AssetFormSheet: View {
         targetAsset.ticker = ticker
         targetAsset.category = category
         targetAsset.holdingType = selectedHoldingType
+        targetAsset.isCompleted = isCompleted
         targetAsset.subCategory = selectedHoldingType == .investment ? selectedSubCategory : nil
         
         let currentBalance = Double(currentBalanceStr) ?? 0.0

@@ -5,6 +5,7 @@
 
 import Foundation
 import SwiftData
+import SwiftUI
 
 enum PortfolioMetrics {
     static func defaultCurrency(in currencies: [Currency]) -> Currency? {
@@ -41,6 +42,9 @@ enum PortfolioMetrics {
     
     static func totalUnits(for transactions: [AssetTransaction]) -> Double {
         let total = transactions.reduce(0.0) { partialResult, transaction in
+            if transaction.type == .dividend || transaction.rawType.uppercased().contains("DIVIDEND") || !transaction.config.isUnitBased {
+                return partialResult
+            }
             switch transaction.type {
             case .buy: return partialResult + transaction.units
             case .sell: return partialResult - transaction.units
@@ -58,6 +62,9 @@ enum PortfolioMetrics {
     }
 
     static func isSoldOff(_ asset: Asset) -> Bool {
+        if asset.isCompleted {
+            return true
+        }
         if asset.holdingType.isNonUnitized {
             return asset.transactions.contains(where: { $0.config.closesAsset })
         }
@@ -70,6 +77,9 @@ enum PortfolioMetrics {
     }
     
     static func investedValue(for asset: Asset) -> Double {
+        if isSoldOff(asset) {
+            return 0.0
+        }
         if asset.holdingType.isNonUnitized {
             let txInvested = asset.transactions.reduce(0.0) { sum, tx in
                 let cfg = tx.config
@@ -102,7 +112,10 @@ enum PortfolioMetrics {
     static func lifetimeInvested(for asset: Asset) -> Double {
         if asset.holdingType.isNonUnitized {
             let sumOutflows = asset.transactions.filter { $0.config.affectsInvestedAmount && $0.config.cashDirection == .outflow }.reduce(0.0) { $0 + $1.amount }
-            return sumOutflows > 0 ? sumOutflows : investedValue(for: asset)
+            if sumOutflows > 0 { return sumOutflows }
+            if asset.principalAmount > 0 { return asset.principalAmount }
+            if asset.premiumAmount > 0 { return asset.premiumAmount }
+            return investedValue(for: asset)
         }
         return FifoCalculator.calculate(transactions: asset.transactions).lifetimeInvested
     }
@@ -115,6 +128,9 @@ enum PortfolioMetrics {
     }
     
     static func currentValue(for asset: Asset) -> Double {
+        if isSoldOff(asset) {
+            return 0.0
+        }
         if asset.holdingType.isNonUnitized {
             let txBalance = asset.transactions.reduce(0.0) { sum, tx in
                 let cfg = tx.config
@@ -138,6 +154,10 @@ enum PortfolioMetrics {
         currentValue(for: asset) - investedValue(for: asset)
     }
     
+    static func lifetimeDividend(for asset: Asset) -> Double {
+        asset.transactions.filter { $0.type == .dividend || $0.rawType.uppercased().contains("DIVIDEND") }.reduce(0.0) { $0 + $1.amount }
+    }
+    
     static func cashFlows(for asset: Asset, valuationDate: Date = Date()) -> [CashFlow] {
         let transactions = orderedTransactions(asset.transactions)
         var cashFlows: [CashFlow] = []
@@ -145,9 +165,10 @@ enum PortfolioMetrics {
         for tx in transactions {
             let cfg = tx.config
             let amount = tx.amount
+            let uRaw = tx.rawType.uppercased()
             if cfg.cashDirection == .outflow {
                 cashFlows.append(CashFlow(amount: -amount, date: tx.date))
-            } else if cfg.cashDirection == .inflow {
+            } else if cfg.cashDirection == .inflow || cfg.cashDirection == .internalAccrual || tx.type == .dividend || uRaw.contains("DIVIDEND") || uRaw.contains("INTEREST") || uRaw.contains("COUPON") {
                 cashFlows.append(CashFlow(amount: amount, date: tx.date))
             }
         }
@@ -256,6 +277,13 @@ enum PortfolioMetrics {
         currentValueInINR(for: asset, rate: rate) - investedValueInINR(for: asset, rate: rate)
     }
     
+    static func lifetimeDividendInINR(for asset: Asset, rate: Double) -> Double {
+        asset.transactions.filter { $0.type == .dividend || $0.rawType.uppercased().contains("DIVIDEND") }.reduce(0.0) { sum, tx in
+            let txRate = tx.inrExchangeRate ?? rate
+            return sum + (tx.amount * txRate)
+        }
+    }
+    
     static func cashFlowsInINR(for asset: Asset, rate: Double, valuationDate: Date = Date()) -> [CashFlow] {
         let transactions = orderedTransactions(asset.transactions)
         var cashFlows: [CashFlow] = []
@@ -264,10 +292,11 @@ enum PortfolioMetrics {
             let cfg = tx.config
             let txRate = tx.inrExchangeRate ?? rate
             let amountINR = tx.amount * txRate
+            let uRaw = tx.rawType.uppercased()
             
             if cfg.cashDirection == .outflow {
                 cashFlows.append(CashFlow(amount: -amountINR, date: tx.date))
-            } else if cfg.cashDirection == .inflow {
+            } else if cfg.cashDirection == .inflow || cfg.cashDirection == .internalAccrual || tx.type == .dividend || uRaw.contains("DIVIDEND") || uRaw.contains("INTEREST") || uRaw.contains("COUPON") {
                 cashFlows.append(CashFlow(amount: amountINR, date: tx.date))
             }
         }
@@ -327,10 +356,11 @@ enum PortfolioMetrics {
         var div = 0
         
         for tx in filtered {
-            let cfg = tx.config
-            if cfg.cashDirection == .outflow {
+            if tx.type == .dividend || tx.rawType.uppercased().contains("DIVIDEND") {
+                div += 1
+            } else if tx.config.cashDirection == .outflow {
                 buy += 1
-            } else if cfg.cashDirection == .inflow {
+            } else if tx.config.cashDirection == .inflow {
                 sell += 1
             } else {
                 div += 1
@@ -338,5 +368,118 @@ enum PortfolioMetrics {
         }
         
         return TransactionCounts(buyCount: buy, sellCount: sell, dividendCount: div, totalCount: buy + sell + div)
+    }
+    
+    // MARK: - Investment Recency Helpers
+    
+    enum InvestmentRecencyStatus: String, CaseIterable, Identifiable {
+        case active = "Active (<= 30d)"
+        case moderate = "Moderate (30-90d)"
+        case dormant = "Dormant (> 90d)"
+        case never = "Never Invested"
+        
+        var id: String { rawValue }
+        
+        var shortLabel: String {
+            switch self {
+            case .active: return "<= 30d"
+            case .moderate: return "30-90d"
+            case .dormant: return "> 90d"
+            case .never: return "Never"
+            }
+        }
+        
+        var color: Color {
+            switch self {
+            case .active: return .green
+            case .moderate: return .orange
+            case .dormant: return .red
+            case .never: return .gray
+            }
+        }
+    }
+    
+    static func lastInvestedTransaction(for asset: Asset) -> AssetTransaction? {
+        asset.transactions
+            .filter { $0.type == .buy || $0.config.cashDirection == .outflow }
+            .max(by: { $0.date < $1.date })
+    }
+    
+    static func daysSinceLastInvestment(for asset: Asset) -> Int? {
+        guard let lastTx = lastInvestedTransaction(for: asset) else { return nil }
+        return Calendar.current.dateComponents([.day], from: lastTx.date, to: Date()).day
+    }
+    
+    static func lastInvestedFormattedText(for asset: Asset) -> String {
+        guard let lastTx = lastInvestedTransaction(for: asset), let days = daysSinceLastInvestment(for: asset) else {
+            return "Never Invested"
+        }
+        let dateStr = lastTx.date.formatted(date: .abbreviated, time: .omitted)
+        if days == 0 {
+            return "Today (\(dateStr))"
+        } else if days == 1 {
+            return "Yesterday (\(dateStr))"
+        } else if days < 30 {
+            return "\(days) days ago (\(dateStr))"
+        } else if days < 365 {
+            let months = days / 30
+            let remDays = days % 30
+            if remDays > 0 && months < 3 {
+                return "\(months) mo \(remDays)d ago (\(dateStr))"
+            }
+            return "\(months) mo ago (\(dateStr))"
+        } else {
+            let yrs = days / 365
+            let mos = (days % 365) / 30
+            if mos > 0 {
+                return "\(yrs) yr \(mos) mo ago (\(dateStr))"
+            }
+            return "\(yrs) yr ago (\(dateStr))"
+        }
+    }
+    
+    static func recencyStatus(for asset: Asset) -> InvestmentRecencyStatus {
+        guard let days = daysSinceLastInvestment(for: asset) else { return .never }
+        if days <= 30 { return .active }
+        if days <= 90 { return .moderate }
+        return .dormant
+    }
+    
+    // MARK: - Tax Classification Helpers
+    
+    struct TaxBadgeInfo {
+        let classification: TaxClassification
+        let label: String
+        let fullLabel: String
+        let isLTCG: Bool
+        let daysHeld: Int
+    }
+    
+    static func taxBadgeInfo(for tx: AssetTransaction, asset: Asset) -> TaxBadgeInfo? {
+        guard tx.type == .buy || tx.config.cashDirection == .outflow else { return nil }
+        let days = Calendar.current.dateComponents([.day], from: tx.date, to: Date()).day ?? 0
+        let thresholdMonths = asset.category?.ltcgMonths ?? ((asset.taxCountry == .us) ? 24 : 12)
+        
+        let taxDetails = FifoCalculator.determineTaxClass(
+            country: asset.taxCountry,
+            assetType: asset.taxAssetType,
+            buyDate: tx.date,
+            valuationDate: Date(),
+            slabRate: 0.30,
+            ltcgThresholdMonths: thresholdMonths
+        )
+        
+        let isLTCG = (taxDetails.classification == .ltcg)
+        let yrText = (thresholdMonths % 12 == 0) ? "\(thresholdMonths / 12)yr" : "\(thresholdMonths)mo"
+        let label = isLTCG ? "LTCG" : (taxDetails.classification == .stcg ? "STCG" : "Slab")
+        let fullLabel = isLTCG ? "LTCG (>\(yrText))" : (taxDetails.classification == .stcg ? "STCG (<\(yrText))" : "Slab Rate")
+        
+        return TaxBadgeInfo(
+            classification: taxDetails.classification,
+            label: label,
+            fullLabel: fullLabel,
+            isLTCG: isLTCG,
+            daysHeld: days
+        )
     }
 }

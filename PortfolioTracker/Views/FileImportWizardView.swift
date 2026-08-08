@@ -34,11 +34,17 @@ struct FileImportWizardView: View {
     // Config state
     @State private var selectedBroker: Broker?
     @State private var selectedCategory: Category?
+    @State private var selectedHoldingTypeOverride: HoldingType?
     @State private var headerRowOffset: Int = 0 // Number of rows to skip before header
+    
+    // Sample template exporter state
+    @State private var templateDocument = CSVDocument()
+    @State private var templateFilename = "Import_Template.csv"
+    @State private var showTemplateExporter = false
     
     // Mappings
     @State private var columnMappings: [Int: TargetField] = [:]
-    @State private var txTypeMappings: [String: TransactionType?] = [:] // rawString -> mappedType
+    @State private var txTypeMappings: [String: String?] = [:] // rawStringInFile -> mappedRawTypeID
     @State private var assetMappings: [String: AssetMappingChoice] = [:] // rawAssetName -> choice
     @State private var aliasSavedFeedback: [String: String] = [:] // fileAssetName -> feedback message
     
@@ -55,6 +61,36 @@ struct FileImportWizardView: View {
         self.initialAsset = initialAsset
         self.initialMode = initialMode
         _selectedCategory = State(initialValue: initialCategory)
+        if let initialAsset {
+            _selectedHoldingTypeOverride = State(initialValue: initialAsset.holdingType)
+        }
+    }
+    
+    private var targetHoldingType: HoldingType {
+        if let overrideType = selectedHoldingTypeOverride {
+            return overrideType
+        }
+        if let asset = initialAsset {
+            return asset.holdingType
+        }
+        if let catAsset = availableAssetsForCategory.first {
+            return catAsset.holdingType
+        }
+        if let cat = selectedCategory {
+            let lower = cat.name.lowercased()
+            if lower.contains("epf") || lower.contains("provident") {
+                return .epf
+            } else if lower.contains("fd") || lower.contains("fixed deposit") || lower.contains("contract") || lower.contains("bond") || lower.contains("debt") {
+                return .fixedDeposit
+            } else if lower.contains("lic") || lower.contains("insurance") || lower.contains("annuity") {
+                return .insuranceAnnuity
+            } else if lower.contains("ppf") || lower.contains("post office") || lower.contains("nsc") || lower.contains("ssy") {
+                return .postOffice
+            } else if lower.contains("bank") || lower.contains("savings") {
+                return .bankBalance
+            }
+        }
+        return .investment
     }
     
     private var dataRows: [[String]] {
@@ -123,9 +159,23 @@ struct FileImportWizardView: View {
             .sheet(item: $postImportReport) { report in
                 ImportResultSummarySheet(
                     report: report,
+                    holdingType: targetHoldingType,
                     onDismiss: { dismiss() },
                     onUndo: { undoImport(report: report) }
                 )
+            }
+            .fileExporter(
+                isPresented: $showTemplateExporter,
+                document: templateDocument,
+                contentType: .commaSeparatedText,
+                defaultFilename: templateFilename
+            ) { result in
+                switch result {
+                case .success(let url):
+                    print("Template saved to: \(url)")
+                case .failure(let err):
+                    print("Template export failed: \(err.localizedDescription)")
+                }
             }
             .onAppear {
                 if selectedCategory == nil, let cat = categories.first {
@@ -196,9 +246,6 @@ struct FileImportWizardView: View {
             .frame(width: 16)
     }
 
-
-
-    
     // MARK: - STEP 1: File & Sheet Selection
     
     private var step1FileAndConfig: some View {
@@ -294,7 +341,7 @@ struct FileImportWizardView: View {
     
     private var step1CategoryAndBrokerSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("2. Target Category & Broker")
+            Text("2. Target Category & Format")
                 .font(.headline)
             
             Picker("Target Category", selection: $selectedCategory) {
@@ -309,7 +356,38 @@ struct FileImportWizardView: View {
             .background(Color(.systemGray6))
             .clipShape(RoundedRectangle(cornerRadius: 8))
             
-            Picker("Broker Statement Source", selection: $selectedBroker) {
+            Picker("Asset Format / Type", selection: $selectedHoldingTypeOverride) {
+                Text("Category Default (\(targetHoldingType.displayName))").tag(nil as HoldingType?)
+                Divider()
+                ForEach(HoldingType.allCases) { type in
+                    Text(type.displayName).tag(type as HoldingType?)
+                }
+            }
+            .pickerStyle(.menu)
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(.systemGray6))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            
+            Button {
+                let csvText = ImportTemplateGenerator.generateTemplateCSV(for: targetHoldingType)
+                templateDocument = CSVDocument(text: csvText)
+                templateFilename = "Import_Template_\(targetHoldingType.rawValue.lowercased()).csv"
+                showTemplateExporter = true
+            } label: {
+                HStack {
+                    Image(systemName: "arrow.down.doc.fill")
+                    Text("Download Sample Template for \(targetHoldingType.displayName)")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+            }
+            .buttonStyle(.bordered)
+            .tint(AppTheme.accent)
+            
+            Picker("Broker / Source Statement", selection: $selectedBroker) {
                 Text("None / Unspecified").tag(nil as Broker?)
                 ForEach(brokers) { broker in
                     Text(broker.name).tag(broker as Broker?)
@@ -401,15 +479,24 @@ struct FileImportWizardView: View {
         }
     }
 
-    
     // MARK: - STEP 2: Column & Transaction Type Mapping
     
     private var step2ColumnAndTypeMapping: some View {
         VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Map File Columns to Transaction Fields")
-                    .font(.headline)
-                Text("Select which field corresponds to each column in your imported statement.")
+                HStack {
+                    Text("Map File Columns for \(targetHoldingType.displayName)")
+                        .font(.headline)
+                    Spacer()
+                    Text(targetHoldingType.isNonUnitized ? "Non-Unitized Format" : "Unitized Format")
+                        .font(.caption2.weight(.bold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(AppTheme.accent.opacity(0.12))
+                        .foregroundStyle(AppTheme.accent)
+                        .clipShape(Capsule())
+                }
+                Text("Select which field corresponds to each column in your statement.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -466,12 +553,13 @@ struct FileImportWizardView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Transaction Type Value Mapping")
                             .font(.headline)
-                        Text("Verify or map raw values in your file to BUY, SELL, or DIVIDEND.")
+                        Text("Map raw values in your file to \(targetHoldingType.displayName) transactions.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                     
                     let uniqueRawTypes = extractUniqueTxTypeValues()
+                    let allowedConfigs = TransactionTypeRegistry.shared.config(for: targetHoldingType).allowedTransactions
                     
                     VStack(spacing: 8) {
                         ForEach(uniqueRawTypes, id: \.self) { rawVal in
@@ -486,16 +574,19 @@ struct FileImportWizardView: View {
                                     get: { txTypeMappings[rawVal] ?? nil },
                                     set: { txTypeMappings[rawVal] = $0 }
                                 )) {
-                                    Text("Ignore / Skip").tag(nil as TransactionType?)
-                                    Text("BUY").tag(TransactionType.buy as TransactionType?)
-                                    Text("SELL").tag(TransactionType.sell as TransactionType?)
-                                    Text("DIVIDEND").tag(TransactionType.dividend as TransactionType?)
+                                    Text("Ignore / Skip").tag(nil as String?)
+                                    ForEach(allowedConfigs) { cfg in
+                                        Text("\(cfg.displayName)").tag(cfg.rawType as String?)
+                                    }
                                 }
-                                .pickerStyle(.segmented)
-                                .frame(width: 220)
+                                .pickerStyle(.menu)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color(.systemGray6))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
                             }
                             .padding(10)
-                            .background(Color(.systemGray6))
+                            .background(Color(.systemGray6).opacity(0.5))
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
                     }
@@ -530,7 +621,7 @@ struct FileImportWizardView: View {
         let rawTypes = extractUniqueTxTypeValues()
         for raw in rawTypes {
             if txTypeMappings[raw] == nil {
-                txTypeMappings[raw] = ImportEngine.inferTxType(raw)
+                txTypeMappings[raw] = ImportEngine.inferRawTxType(raw, holdingType: targetHoldingType)
             }
         }
     }
@@ -792,15 +883,20 @@ struct FileImportWizardView: View {
                                         .foregroundStyle(AppTheme.loss)
                                 }
                                 
-                                if let type = row.txType {
-                                    Text(type.rawValue)
-                                        .font(.caption2)
-                                        .fontWeight(.bold)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2)
-                                        .background(txTypeColor(type).opacity(0.12))
-                                        .foregroundStyle(txTypeColor(type))
-                                        .clipShape(Capsule())
+                                if let rawTypeStr = row.rawTxType {
+                                    let cfg = TransactionTypeRegistry.config(for: rawTypeStr, holdingType: targetHoldingType)
+                                    HStack(spacing: 4) {
+                                        Image(systemName: cfg.iconName)
+                                            .font(.caption2)
+                                        Text(cfg.displayName)
+                                            .font(.caption2)
+                                            .fontWeight(.bold)
+                                    }
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(cashDirectionColor(cfg.cashDirection).opacity(0.12))
+                                    .foregroundStyle(cashDirectionColor(cfg.cashDirection))
+                                    .clipShape(Capsule())
                                 }
                                 
                                 Spacer()
@@ -817,9 +913,16 @@ struct FileImportWizardView: View {
                                 Spacer()
                                 
                                 if let units = row.units, let price = row.pricePerUnit {
-                                    Text("\(units.formatted2) units @ \(price.formatted2)")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                    if targetHoldingType.isNonUnitized {
+                                        Text("Amount: \((units * price).formattedComma)")
+                                            .font(.caption)
+                                            .fontWeight(.bold)
+                                            .foregroundStyle(AppTheme.accent)
+                                    } else {
+                                        Text("\(units.formatted2) units @ \(price.formatted2)")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
                                 }
                             }
                             
@@ -903,11 +1006,11 @@ struct FileImportWizardView: View {
         }
     }
     
-    private func txTypeColor(_ type: TransactionType) -> Color {
-        switch type {
-        case .buy: return AppTheme.profit
-        case .sell: return AppTheme.loss
-        case .dividend: return AppTheme.warning
+    private func cashDirectionColor(_ dir: CashDirection) -> Color {
+        switch dir {
+        case .outflow: return AppTheme.profit
+        case .inflow: return AppTheme.loss
+        case .internalAccrual: return .orange
         }
     }
     
@@ -989,7 +1092,7 @@ struct FileImportWizardView: View {
             if let firstDataRowIdx = fileRawGrid.firstIndex(where: { row in
                 row.contains(where: { cell in
                     let val = cell.trimmingCharacters(in: .whitespacesAndNewlines)
-                    return !val.isEmpty && (ImportEngine.parseDate(val) != nil || ImportEngine.inferTxType(val) != nil || val.lowercased().contains("date") || val.lowercased().contains("asset"))
+                    return !val.isEmpty && (ImportEngine.parseDate(val) != nil || ImportEngine.inferRawTxType(val, holdingType: targetHoldingType) != nil || val.lowercased().contains("date") || val.lowercased().contains("asset"))
                 })
             }) {
                 headerRowOffset = firstDataRowIdx
@@ -1010,7 +1113,7 @@ struct FileImportWizardView: View {
         if let firstDataRowIdx = fileRawGrid.firstIndex(where: { row in
             row.contains(where: { cell in
                 let val = cell.trimmingCharacters(in: .whitespacesAndNewlines)
-                return !val.isEmpty && (ImportEngine.parseDate(val) != nil || ImportEngine.inferTxType(val) != nil || val.lowercased().contains("date") || val.lowercased().contains("asset"))
+                return !val.isEmpty && (ImportEngine.parseDate(val) != nil || ImportEngine.inferRawTxType(val, holdingType: targetHoldingType) != nil || val.lowercased().contains("date") || val.lowercased().contains("asset"))
             })
         }) {
             headerRowOffset = firstDataRowIdx
@@ -1020,6 +1123,7 @@ struct FileImportWizardView: View {
     private func autoDetectColumnMappings() {
         columnMappings.removeAll()
         let sampleRow = dataContentRows.first ?? headerRow
+        let isNonUnitized = targetHoldingType.isNonUnitized
         
         for cIdx in 0..<headerRow.count {
             let header = headerRow[cIdx].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -1027,19 +1131,27 @@ struct FileImportWizardView: View {
             
             if header.contains("date") || header.contains("time") {
                 columnMappings[cIdx] = .date
-            } else if header.contains("symbol") || header.contains("asset") || header.contains("stock") || header.contains("scheme") || header.contains("name") || header.contains("ticker") {
+            } else if header.contains("symbol") || header.contains("asset") || header.contains("stock") || header.contains("scheme") || header.contains("name") || header.contains("ticker") || header.contains("policy") || header.contains("account") || header.contains("organization") {
                 columnMappings[cIdx] = .assetName
-            } else if header.contains("type") || header.contains("action") || header.contains("side") || header.contains("transaction") {
+            } else if header.contains("type") || header.contains("action") || header.contains("side") || header.contains("transaction") || header.contains("description") || header.contains("particulars") {
                 columnMappings[cIdx] = .transactionType
+            } else if isNonUnitized && (header.contains("amount") || header.contains("deposit") || header.contains("contribution") || header.contains("payment") || header.contains("premium") || header.contains("interest") || header.contains("principal") || header.contains("val")) {
+                if !columnMappings.values.contains(.amount) {
+                    columnMappings[cIdx] = .amount
+                }
             } else if header.contains("qty") || header.contains("unit") || header.contains("quantity") || header.contains("shares") {
                 columnMappings[cIdx] = .quantity
             } else if header.contains("price") || header.contains("nav") || header.contains("rate") || header.contains("amount") || header.contains("cost") || header.contains("value") {
-                if columnMappings.values.contains(.price) {
+                if columnMappings.values.contains(.price) || columnMappings.values.contains(.amount) {
                     if header.contains("rate") || header.contains("forex") || header.contains("inr") {
                         columnMappings[cIdx] = .inrExchangeRate
                     }
                 } else {
-                    columnMappings[cIdx] = .price
+                    if isNonUnitized {
+                        columnMappings[cIdx] = .amount
+                    } else {
+                        columnMappings[cIdx] = .price
+                    }
                 }
             } else if header.contains("tt buy") {
                 columnMappings[cIdx] = .ttBuyRate
@@ -1051,12 +1163,14 @@ struct FileImportWizardView: View {
                 // Smart fallback inspection if header text isn't descriptive
                 if columnMappings.values.contains(.date) == false, ImportEngine.parseDate(sampleVal) != nil {
                     columnMappings[cIdx] = .date
-                } else if columnMappings.values.contains(.transactionType) == false, ImportEngine.inferTxType(sampleVal) != nil {
+                } else if columnMappings.values.contains(.transactionType) == false, ImportEngine.inferRawTxType(sampleVal, holdingType: targetHoldingType) != nil {
                     columnMappings[cIdx] = .transactionType
-                } else if columnMappings.values.contains(.assetName) == false, Double(sampleVal) == nil, ImportEngine.parseDate(sampleVal) == nil, ImportEngine.inferTxType(sampleVal) == nil {
+                } else if columnMappings.values.contains(.assetName) == false, Double(sampleVal) == nil, ImportEngine.parseDate(sampleVal) == nil, ImportEngine.inferRawTxType(sampleVal, holdingType: targetHoldingType) == nil {
                     columnMappings[cIdx] = .assetName
                 } else if Double(sampleVal) != nil {
-                    if !columnMappings.values.contains(.quantity) {
+                    if isNonUnitized && !columnMappings.values.contains(.amount) {
+                        columnMappings[cIdx] = .amount
+                    } else if !columnMappings.values.contains(.quantity) {
                         columnMappings[cIdx] = .quantity
                     } else if !columnMappings.values.contains(.price) {
                         columnMappings[cIdx] = .price
@@ -1085,6 +1199,7 @@ struct FileImportWizardView: View {
         let dateCol = columnMappings.first(where: { $0.value == .date })?.key
         let assetNameCol = columnMappings.first(where: { $0.value == .assetName })?.key
         let txTypeCol = columnMappings.first(where: { $0.value == .transactionType })?.key
+        let amountCol = columnMappings.first(where: { $0.value == .amount })?.key
         let qtyCol = columnMappings.first(where: { $0.value == .quantity })?.key
         let priceCol = columnMappings.first(where: { $0.value == .price })?.key
         let inrRateCol = columnMappings.first(where: { $0.value == .inrExchangeRate })?.key
@@ -1143,24 +1258,43 @@ struct FileImportWizardView: View {
             
             // 3. Parse Transaction Type
             if let tCol = txTypeCol, rawRow.indices.contains(tCol) {
-                let rawType = rawRow[tCol].trimmingCharacters(in: .whitespacesAndNewlines)
-                if let mapped = txTypeMappings[rawType] {
-                    row.txType = mapped
+                let rawTypeInFile = rawRow[tCol].trimmingCharacters(in: .whitespacesAndNewlines)
+                if let mapped = txTypeMappings[rawTypeInFile], let validMapped = mapped {
+                    row.rawTxType = validMapped
                 } else {
-                    row.txType = ImportEngine.inferTxType(rawType)
+                    row.rawTxType = ImportEngine.inferRawTxType(rawTypeInFile, holdingType: targetHoldingType)
                 }
-            } else if initialMode == .dividends {
-                row.txType = .dividend
-            } else {
-                row.txType = .buy // Default fallback if unspecified
+            }
+            if row.rawTxType == nil {
+                let defaultConfig = TransactionTypeRegistry.shared.config(for: targetHoldingType)
+                row.rawTxType = defaultConfig.defaultTransactionType
             }
             
-            // 4. Parse Quantity & Price
-            if row.txType == .dividend {
-                row.units = 1.0
-                if let pCol = priceCol, rawRow.indices.contains(pCol) {
-                    row.pricePerUnit = ImportEngine.parseNumber(rawRow[pCol])
+            if let rawTypeStr = row.rawTxType {
+                let cfg = TransactionTypeRegistry.config(for: rawTypeStr, holdingType: targetHoldingType)
+                if cfg.cashDirection == .inflow {
+                    row.txType = .sell
+                } else if cfg.cashDirection == .internalAccrual || rawTypeStr.uppercased().contains("INTEREST") || rawTypeStr.uppercased().contains("BONUS") {
+                    row.txType = .dividend
+                } else {
+                    row.txType = .buy
                 }
+            }
+            
+            // 4. Parse Amount / Quantity & Price
+            if row.txType == .dividend {
+                row.units = 0.0
+                if let aCol = amountCol, rawRow.indices.contains(aCol), let parsedAmt = ImportEngine.parseNumber(rawRow[aCol]), parsedAmt > 0 {
+                    row.pricePerUnit = parsedAmt
+                } else if let pCol = priceCol, rawRow.indices.contains(pCol), let parsedAmt = ImportEngine.parseNumber(rawRow[pCol]), parsedAmt > 0 {
+                    row.pricePerUnit = parsedAmt
+                }
+            } else if let aCol = amountCol, rawRow.indices.contains(aCol), let parsedAmt = ImportEngine.parseNumber(rawRow[aCol]), parsedAmt > 0 {
+                row.units = 1.0
+                row.pricePerUnit = parsedAmt
+            } else if targetHoldingType.isNonUnitized, let pCol = priceCol, rawRow.indices.contains(pCol), let parsedAmt = ImportEngine.parseNumber(rawRow[pCol]), parsedAmt > 0 {
+                row.units = 1.0
+                row.pricePerUnit = parsedAmt
             } else {
                 if let qCol = qtyCol, rawRow.indices.contains(qCol) {
                     row.units = ImportEngine.parseNumber(rawRow[qCol])
@@ -1170,8 +1304,9 @@ struct FileImportWizardView: View {
                 }
             }
             
-            if (row.units ?? 0) <= 0 || (row.pricePerUnit ?? 0) <= 0 {
-                row.validationError = "Invalid quantity or price"
+            let isZeroUnitsAllowed = row.txType == .dividend || targetHoldingType.isNonUnitized
+            if (!isZeroUnitsAllowed && (row.units ?? 0) <= 0) || (row.pricePerUnit ?? 0) <= 0 {
+                row.validationError = "Invalid quantity or amount"
             }
             
             // 5. Parse Exchange Rate (TT Buy / TT Sell rules for non-INR)
@@ -1229,6 +1364,7 @@ struct FileImportWizardView: View {
                     targetAsset = existingCreated
                 } else {
                     let newAsset = Asset(name: newName, currentPrice: price, category: selectedCategory)
+                    newAsset.holdingType = targetHoldingType
                     modelContext.insert(newAsset)
                     createdAssetMap[newName] = newAsset
                     targetAsset = newAsset
@@ -1240,6 +1376,7 @@ struct FileImportWizardView: View {
             
             let transaction = AssetTransaction(
                 type: txType,
+                rawType: row.rawTxType,
                 units: units,
                 pricePerUnit: price,
                 date: date,
@@ -1257,8 +1394,14 @@ struct FileImportWizardView: View {
             imported += 1
             
             // Update Report Metrics
-            let val = units * price
+            let val = txType == .dividend ? price : (units * price)
             var impact = assetImpactDict[finalAsset.name] ?? PostImportReport.AssetImpact(assetName: finalAsset.name)
+            
+            let rawKey = row.rawTxType ?? txType.rawValue
+            report.rawTypeCounts[rawKey, default: 0] += 1
+            report.rawTypeTotals[rawKey, default: 0.0] += val
+            impact.rawTypeCounts[rawKey, default: 0] += 1
+            impact.rawTypeTotals[rawKey, default: 0.0] += val
             
             switch txType {
             case .buy:
@@ -1326,6 +1469,7 @@ struct FileImportWizardView: View {
 
 struct ImportResultSummarySheet: View {
     let report: PostImportReport
+    let holdingType: HoldingType
     let onDismiss: () -> Void
     let onUndo: () -> Void
     
@@ -1345,72 +1489,18 @@ struct ImportResultSummarySheet: View {
                             .font(.title2)
                             .fontWeight(.bold)
                         
-                        Text("Statement processed for \(report.categoryName)")
+                        Text("Processed for \(report.categoryName) (\(holdingType.displayName))")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
                     .padding(.top, 8)
                     
-                    // High Level Summary Grid
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                        summaryCard(
-                            title: "Total Imported",
-                            value: "\(report.totalImportedCount) Entries",
-                            subtitle: "\(report.buyCount) Buy • \(report.sellCount) Sell\(report.dividendCount > 0 ? " • \(report.dividendCount) Div" : "")",
-                            color: AppTheme.accent,
-                            icon: "tray.and.arrow.down.fill"
-                        )
-                        
-                        summaryCard(
-                            title: "Net Flow Impact",
-                            value: "\(report.currencySymbol)\(abs(report.netFlowValue).formattedComma)",
-                            subtitle: report.netFlowValue >= 0 ? "Net Invested" : "Net Withdrawn",
-                            color: report.netFlowValue >= 0 ? AppTheme.profit : AppTheme.loss,
-                            icon: "arrow.left.arrow.right"
-                        )
-                        
-                        summaryCard(
-                            title: "Total Invested (Buy)",
-                            value: "\(report.currencySymbol)\(report.totalBuyValue.formattedComma)",
-                            subtitle: "\(report.buyCount) Buy Transaction(s)",
-                            color: AppTheme.profit,
-                            icon: "arrow.down.left"
-                        )
-                        
-                        summaryCard(
-                            title: "Total Retrieved (Sell)",
-                            value: "\(report.currencySymbol)\(report.totalSellValue.formattedComma)",
-                            subtitle: "\(report.sellCount) Sell Transaction(s)",
-                            color: report.sellCount == 0 ? .secondary : AppTheme.loss,
-                            icon: "arrow.up.right"
-                        )
-                    }
-                    
-                    if report.dividendCount > 0 || report.newAssetsCreatedCount > 0 {
-                        HStack(spacing: 12) {
-                            if report.dividendCount > 0 {
-                                miniStatBadge(
-                                    title: "Dividend Income",
-                                    value: "\(report.currencySymbol)\(report.totalDividendValue.formattedComma)",
-                                    icon: "dollarsign.circle.fill",
-                                    color: AppTheme.warning
-                                )
-                            }
-                            
-                            if report.newAssetsCreatedCount > 0 {
-                                miniStatBadge(
-                                    title: "New Assets",
-                                    value: "\(report.newAssetsCreatedCount) Created",
-                                    icon: "plus.circle.fill",
-                                    color: AppTheme.accent
-                                )
-                            }
-                        }
-                    }
+                    // Category-Specific Summary Grid
+                    summaryGridForHoldingType
                     
                     // Per-Asset Impact List
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Asset-by-Asset Impact Breakdown")
+                        Text("Asset-by-Asset Breakdown")
                             .font(.headline)
                         
                         VStack(spacing: 10) {
@@ -1423,73 +1513,34 @@ struct ImportResultSummarySheet: View {
                                         
                                         Spacer()
                                         
-                                        HStack(spacing: 4) {
-                                            if impact.buyCount > 0 {
-                                                Text("\(impact.buyCount) Buy")
-                                                    .font(.caption2)
-                                                    .fontWeight(.bold)
-                                                    .padding(.horizontal, 6)
-                                                    .padding(.vertical, 2)
-                                                    .background(AppTheme.profit.opacity(0.15))
-                                                    .foregroundStyle(AppTheme.profit)
-                                                    .clipShape(Capsule())
-                                            }
-                                            if impact.sellCount > 0 {
-                                                Text("\(impact.sellCount) Sell")
-                                                    .font(.caption2)
-                                                    .fontWeight(.bold)
-                                                    .padding(.horizontal, 6)
-                                                    .padding(.vertical, 2)
-                                                    .background(AppTheme.loss.opacity(0.15))
-                                                    .foregroundStyle(AppTheme.loss)
-                                                    .clipShape(Capsule())
-                                            }
-                                            if impact.dividendCount > 0 {
-                                                Text("\(impact.dividendCount) Div")
-                                                    .font(.caption2)
-                                                    .fontWeight(.bold)
-                                                    .padding(.horizontal, 6)
-                                                    .padding(.vertical, 2)
-                                                    .background(AppTheme.warning.opacity(0.15))
-                                                    .foregroundStyle(AppTheme.warning)
-                                                    .clipShape(Capsule())
-                                            }
-                                        }
+                                        Text("\(impact.rawTypeCounts.values.reduce(0, +)) Entries")
+                                            .font(.caption2)
+                                            .fontWeight(.bold)
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 3)
+                                            .background(AppTheme.accent.opacity(0.12))
+                                            .foregroundStyle(AppTheme.accent)
+                                            .clipShape(Capsule())
                                     }
                                     
                                     Divider()
                                     
-                                    HStack {
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text("Units Impact")
-                                                .font(.caption2)
-                                                .foregroundStyle(.secondary)
-                                            Text(impact.netUnits >= 0 ? "+\(impact.netUnits.formatted2) units" : "\(impact.netUnits.formatted2) units")
+                                    ForEach(Array(impact.rawTypeTotals.keys.sorted()), id: \.self) { rawTypeKey in
+                                        let cfg = TransactionTypeRegistry.config(for: rawTypeKey, holdingType: holdingType)
+                                        let count = impact.rawTypeCounts[rawTypeKey] ?? 0
+                                        let totalVal = impact.rawTypeTotals[rawTypeKey] ?? 0.0
+                                        
+                                        HStack {
+                                            Label(cfg.displayName, systemImage: cfg.iconName)
                                                 .font(.caption)
-                                                .fontWeight(.semibold)
-                                                .foregroundStyle(impact.netUnits >= 0 ? AppTheme.profit : AppTheme.loss)
-                                        }
-                                        
-                                        Spacer()
-                                        
-                                        VStack(alignment: .trailing, spacing: 2) {
-                                            Text("Value Added")
-                                                .font(.caption2)
                                                 .foregroundStyle(.secondary)
-                                            HStack(spacing: 6) {
-                                                if impact.buyValue > 0 {
-                                                    Text("+\(report.currencySymbol)\(impact.buyValue.formattedComma)")
-                                                        .font(.caption)
-                                                        .fontWeight(.bold)
-                                                        .foregroundStyle(AppTheme.profit)
-                                                }
-                                                if impact.sellValue > 0 {
-                                                    Text("-\(report.currencySymbol)\(impact.sellValue.formattedComma)")
-                                                        .font(.caption)
-                                                        .fontWeight(.bold)
-                                                        .foregroundStyle(AppTheme.loss)
-                                                }
-                                            }
+                                            Spacer()
+                                            Text("\(count)x")
+                                                .font(.caption2)
+                                                .foregroundStyle(.tertiary)
+                                            Text("\(report.currencySymbol)\(totalVal.formattedComma)")
+                                                .font(.caption)
+                                                .fontWeight(.bold)
                                         }
                                     }
                                 }
@@ -1560,6 +1611,129 @@ struct ImportResultSummarySheet: View {
     }
     
     @ViewBuilder
+    private var summaryGridForHoldingType: some View {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+            summaryCard(
+                title: "Total Entries",
+                value: "\(report.totalImportedCount) Rows",
+                subtitle: holdingType.displayName,
+                color: AppTheme.accent,
+                icon: "tray.and.arrow.down.fill"
+            )
+            
+            switch holdingType {
+            case .epf:
+                let eeVal = report.rawTypeTotals["EMPLOYEE_CONTRIBUTION"] ?? 0.0
+                let erVal = report.rawTypeTotals["EMPLOYER_CONTRIBUTION"] ?? 0.0
+                let intVal = report.rawTypeTotals["INTEREST"] ?? 0.0
+                let totalAdd = eeVal + erVal + intVal
+                
+                summaryCard(
+                    title: "Total EPF Added",
+                    value: "\(report.currencySymbol)\(totalAdd.formattedComma)",
+                    subtitle: "Combined Contributions",
+                    color: AppTheme.profit,
+                    icon: "building.2.fill"
+                )
+                summaryCard(
+                    title: "Employee Share",
+                    value: "\(report.currencySymbol)\(eeVal.formattedComma)",
+                    subtitle: "\(report.rawTypeCounts["EMPLOYEE_CONTRIBUTION"] ?? 0) Deduction(s)",
+                    color: AppTheme.profit,
+                    icon: "person.fill.badge.plus"
+                )
+                summaryCard(
+                    title: "Employer Match",
+                    value: "\(report.currencySymbol)\(erVal.formattedComma)",
+                    subtitle: "\(report.rawTypeCounts["EMPLOYER_CONTRIBUTION"] ?? 0) Contribution(s)",
+                    color: .orange,
+                    icon: "building.columns.fill"
+                )
+                if intVal > 0 {
+                    summaryCard(
+                        title: "EPF Interest Credited",
+                        value: "\(report.currencySymbol)\(intVal.formattedComma)",
+                        subtitle: "Annual EPFO Interest",
+                        color: AppTheme.warning,
+                        icon: "percent"
+                    )
+                }
+                
+            case .fixedDeposit:
+                let depVal = report.rawTypeTotals["DEPOSIT"] ?? 0.0
+                let intVal = report.rawTypeTotals["INTEREST"] ?? 0.0
+                let payoutVal = report.rawTypeTotals["INTEREST_PAYOUT"] ?? 0.0
+                
+                summaryCard(
+                    title: "Principal Deposits",
+                    value: "\(report.currencySymbol)\(depVal.formattedComma)",
+                    subtitle: "\(report.rawTypeCounts["DEPOSIT"] ?? 0) Deposit(s)",
+                    color: AppTheme.profit,
+                    icon: "arrow.down.right.circle.fill"
+                )
+                summaryCard(
+                    title: "Interest Credited",
+                    value: "\(report.currencySymbol)\(intVal.formattedComma)",
+                    subtitle: "Compounded Return",
+                    color: AppTheme.warning,
+                    icon: "percent"
+                )
+                if payoutVal > 0 {
+                    summaryCard(
+                        title: "Interest Payouts",
+                        value: "\(report.currencySymbol)\(payoutVal.formattedComma)",
+                        subtitle: "Credited to Bank",
+                        color: .blue,
+                        icon: "banknote.fill"
+                    )
+                }
+                
+            case .insuranceAnnuity:
+                let premVal = report.rawTypeTotals["PREMIUM"] ?? 0.0
+                let bonusVal = report.rawTypeTotals["BONUS"] ?? 0.0
+                
+                summaryCard(
+                    title: "Premiums Paid",
+                    value: "\(report.currencySymbol)\(premVal.formattedComma)",
+                    subtitle: "\(report.rawTypeCounts["PREMIUM"] ?? 0) Premium(s)",
+                    color: AppTheme.profit,
+                    icon: "doc.text.fill"
+                )
+                summaryCard(
+                    title: "Bonus Accrued",
+                    value: "\(report.currencySymbol)\(bonusVal.formattedComma)",
+                    subtitle: "Reversionary Bonus",
+                    color: AppTheme.warning,
+                    icon: "star.fill"
+                )
+                
+            default:
+                summaryCard(
+                    title: "Net Flow Impact",
+                    value: "\(report.currencySymbol)\(abs(report.netFlowValue).formattedComma)",
+                    subtitle: report.netFlowValue >= 0 ? "Net Invested" : "Net Withdrawn",
+                    color: report.netFlowValue >= 0 ? AppTheme.profit : AppTheme.loss,
+                    icon: "arrow.left.arrow.right"
+                )
+                summaryCard(
+                    title: "Total Invested (Buy)",
+                    value: "\(report.currencySymbol)\(report.totalBuyValue.formattedComma)",
+                    subtitle: "\(report.buyCount) Buy Transaction(s)",
+                    color: AppTheme.profit,
+                    icon: "arrow.down.left"
+                )
+                summaryCard(
+                    title: "Total Retrieved (Sell)",
+                    value: "\(report.currencySymbol)\(report.totalSellValue.formattedComma)",
+                    subtitle: "\(report.sellCount) Sell Transaction(s)",
+                    color: report.sellCount == 0 ? .secondary : AppTheme.loss,
+                    icon: "arrow.up.right"
+                )
+            }
+        }
+    }
+    
+    @ViewBuilder
     private func summaryCard(title: String, value: String, subtitle: String, color: Color, icon: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
@@ -1583,27 +1757,5 @@ struct ImportResultSummarySheet: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(color.opacity(0.08))
         .clipShape(RoundedRectangle(cornerRadius: 12))
-    }
-    
-    @ViewBuilder
-    private func miniStatBadge(title: String, value: String, icon: String, color: Color) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .foregroundStyle(color)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                Text(value)
-                    .font(.caption)
-                    .fontWeight(.bold)
-                    .foregroundStyle(color)
-            }
-            Spacer()
-        }
-        .padding(10)
-        .frame(maxWidth: .infinity)
-        .background(color.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }
