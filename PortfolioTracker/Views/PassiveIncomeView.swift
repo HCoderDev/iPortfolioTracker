@@ -36,6 +36,7 @@ struct PassiveIncomeView: View {
     @State private var searchText: String = ""
     @State private var expandedCategories: Set<PersistentIdentifier> = []
     @State private var showLogIncomeSheet: Bool = false
+    @State private var showCategoryRulesSheet: Bool = false
     
     // Currency exchange rate converter helper
     private func transactionRate(for tx: AssetTransaction) -> Double {
@@ -46,24 +47,22 @@ struct PassiveIncomeView: View {
         return PortfolioMetrics.currentInrExchangeRate(for: cat, currencies: currencies)
     }
     
-    // Check if a transaction is passive income (dividends, interest, coupons, bonuses, etc.)
+    // Check if a transaction is passive income based on the Asset Category's configured passive rules
     private func isPassiveIncome(_ tx: AssetTransaction) -> Bool {
         if tx.asset?.holdingType.isNonUnitized == true && tx.config.closesAsset {
             // Principal maturity payouts are non-income capital returns
             return false
         }
-        if tx.type == .dividend { return true }
-        let raw = tx.rawType.uppercased()
-        if raw.contains("DIVIDEND") || raw.contains("INTEREST") || raw.contains("COUPON") ||
-            raw.contains("BONUS") || raw.contains("SURVIVAL_BENEFIT") || raw.contains("RENT") ||
-            raw.contains("ROYALTY") || raw.contains("PAYOUT") {
-            return true
+        guard let category = tx.asset?.category else {
+            let raw = tx.rawType.uppercased()
+            if raw.contains("DIVIDEND") || raw.contains("INTEREST") || raw.contains("COUPON") ||
+                raw.contains("BONUS") || raw.contains("SURVIVAL_BENEFIT") || raw.contains("RENT") ||
+                raw.contains("ROYALTY") || tx.type == .dividend {
+                return true
+            }
+            return false
         }
-        if !tx.config.affectsInvestedAmount && tx.config.affectsProfit &&
-            (tx.config.cashDirection == .inflow || tx.config.cashDirection == .internalAccrual) {
-            return true
-        }
-        return false
+        return category.isPassiveTransactionType(tx.rawType) || (tx.type == .dividend && category.isPassiveTransactionType("DIVIDEND"))
     }
     
     // Categorize passive income type for filtering
@@ -487,19 +486,34 @@ struct PassiveIncomeView: View {
                         }
                         Spacer()
                         
-                        Button {
-                            showLogIncomeSheet = true
-                        } label: {
-                            Label("Log Income", systemImage: "plus.circle.fill")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 8)
-                                .background(AppTheme.profitGradient)
-                                .clipShape(Capsule())
-                                .shadow(color: AppTheme.profit.opacity(0.3), radius: 4, x: 0, y: 2)
+                        HStack(spacing: 8) {
+                            Button {
+                                showCategoryRulesSheet = true
+                            } label: {
+                                Label("Income Rules", systemImage: "slider.horizontal.3")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundStyle(AppTheme.accent)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(AppTheme.accent.opacity(0.12))
+                                    .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            
+                            Button {
+                                showLogIncomeSheet = true
+                            } label: {
+                                Label("Log Income", systemImage: "plus.circle.fill")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 8)
+                                    .background(AppTheme.profitGradient)
+                                    .clipShape(Capsule())
+                                    .shadow(color: AppTheme.profit.opacity(0.3), radius: 4, x: 0, y: 2)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
                     
                     Divider()
@@ -762,6 +776,9 @@ struct PassiveIncomeView: View {
         .navigationTitle("Passive Income")
         .sheet(isPresented: $showLogIncomeSheet) {
             LogIncomeFormSheet(assets: allAssets, brokers: Array(try! modelContext.fetch(FetchDescriptor<Broker>())))
+        }
+        .sheet(isPresented: $showCategoryRulesSheet) {
+            CategoryPassiveIncomeRulesSheet()
         }
     }
     
@@ -1411,5 +1428,105 @@ struct LogIncomeFormSheet: View {
         modelContext.insert(tx)
         try? modelContext.save()
         dismiss()
+    }
+}
+
+// MARK: - Category Passive Income Rules Sheet
+struct CategoryPassiveIncomeRulesSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Query(sort: \Category.name) private var categories: [Category]
+    
+    @State private var selectedCategory: Category?
+    
+    private let availableTypes = [
+        ("DIVIDEND", "Cash Dividends", "banknote.fill"),
+        ("INTEREST", "Interest Credited / Reinvested", "percent"),
+        ("INTEREST_PAYOUT", "Interest Payout (to Bank)", "arrow.down.right.circle.fill"),
+        ("SURVIVAL_BENEFIT", "Survival / Money-Back Benefit", "giftcard.fill"),
+        ("BONUS", "Accrued Reversionary Bonus", "star.fill"),
+        ("COUPON", "Bond Coupon Payout", "doc.text.fill"),
+        ("RENT", "Rental Income", "house.fill"),
+        ("ROYALTY", "Royalty Income", "crown.fill")
+    ]
+    
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Select Category") {
+                    Picker("Asset Category", selection: $selectedCategory) {
+                        Text("Select a category...").tag(nil as Category?)
+                        ForEach(categories) { cat in
+                            Text("\(cat.name) (\(cat.currencyCode))").tag(cat as Category?)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                }
+                
+                if let cat = selectedCategory {
+                    Section("Configure Passive Income Rules for '\(cat.name)'") {
+                        Text("Check the transaction types below that should be tracked as Passive Income for assets in '\(cat.name)':")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        
+                        HStack {
+                            Button("Select All") {
+                                cat.passiveTransactionTypes = Set(availableTypes.map { $0.0 })
+                            }
+                            .font(.caption.weight(.bold))
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(AppTheme.accent)
+                            
+                            Spacer()
+                            
+                            Button("Deselect All") {
+                                cat.passiveTransactionTypes = []
+                            }
+                            .font(.caption.weight(.bold))
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(Color.red)
+                        }
+                        .padding(.vertical, 2)
+                        
+                        ForEach(availableTypes, id: \.0) { item in
+                            let isChecked = cat.passiveTransactionTypes.contains(item.0)
+                            Toggle(isOn: Binding(
+                                get: { isChecked },
+                                set: { newValue in
+                                    var current = cat.passiveTransactionTypes
+                                    if newValue {
+                                        current.insert(item.0)
+                                    } else {
+                                        current.remove(item.0)
+                                    }
+                                    cat.passiveTransactionTypes = current
+                                }
+                            )) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: item.2)
+                                        .font(.caption)
+                                        .foregroundStyle(AppTheme.accent)
+                                    Text(item.1)
+                                        .font(.system(size: 13, weight: .medium))
+                                }
+                            }
+                            .tint(AppTheme.accent)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Configure Category Passive Rules")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                        .bold()
+                }
+            }
+            .onAppear {
+                if selectedCategory == nil {
+                    selectedCategory = categories.first
+                }
+            }
+        }
     }
 }

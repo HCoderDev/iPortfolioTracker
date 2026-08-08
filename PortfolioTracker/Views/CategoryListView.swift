@@ -188,6 +188,7 @@ struct CategoryFormSheet: View {
     @State private var selectedCurrencyCode: String = ""
     @State private var isIndividualEquity: Bool = false
     @State private var ltcgThresholdMonths: Int = 12
+    @State private var selectedPassiveTypes: Set<String> = Category.defaultPassiveTypes
     @State private var hasUpdatedDate: Bool = false
     @State private var lastUpdatedDate: Date = Date()
     
@@ -225,6 +226,45 @@ struct CategoryFormSheet: View {
                     Text("Assets in this category held longer than \(ltcgThresholdMonths) months qualify for Long Term Capital Gains (LTCG). Assets held for \(ltcgThresholdMonths) months or less qualify as STCG.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+                
+                Section("Passive Income Rules for Category") {
+                    Text("Select which transaction types qualify as Passive Income for assets in '\(name.isEmpty ? "this Category" : name)':")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    
+                    let availableTypes = [
+                        ("DIVIDEND", "Cash Dividends", "banknote.fill"),
+                        ("INTEREST", "Interest Credited / Reinvested", "percent"),
+                        ("INTEREST_PAYOUT", "Interest Payout (to Bank)", "arrow.down.right.circle.fill"),
+                        ("SURVIVAL_BENEFIT", "Survival / Money-Back Benefit", "giftcard.fill"),
+                        ("BONUS", "Accrued Reversionary Bonus", "star.fill"),
+                        ("COUPON", "Bond Coupon Payout", "doc.text.fill"),
+                        ("RENT", "Rental Income", "house.fill"),
+                        ("ROYALTY", "Royalty Income", "crown.fill")
+                    ]
+                    
+                    ForEach(availableTypes, id: \.0) { item in
+                        Toggle(isOn: Binding(
+                            get: { selectedPassiveTypes.contains(item.0) },
+                            set: { isSelected in
+                                if isSelected {
+                                    selectedPassiveTypes.insert(item.0)
+                                } else {
+                                    selectedPassiveTypes.remove(item.0)
+                                }
+                            }
+                        )) {
+                            HStack(spacing: 8) {
+                                Image(systemName: item.2)
+                                    .font(.caption)
+                                    .foregroundStyle(AppTheme.accent)
+                                Text(item.1)
+                                    .font(.system(size: 13, weight: .medium))
+                            }
+                        }
+                        .tint(AppTheme.accent)
+                    }
                 }
                 
                 Section("Data Freshness / Updated Up To") {
@@ -280,6 +320,7 @@ struct CategoryFormSheet: View {
                     selectedCurrencyCode = category.currencyCode
                     isIndividualEquity = category.isIndividualEquity ?? false
                     ltcgThresholdMonths = category.ltcgMonths
+                    selectedPassiveTypes = category.passiveTransactionTypes
                     if let date = category.lastUpdatedDate {
                         hasUpdatedDate = true
                         lastUpdatedDate = date
@@ -291,6 +332,7 @@ struct CategoryFormSheet: View {
                     selectedCurrencyCode = defaultCurrency?.code ?? ""
                     isIndividualEquity = false
                     ltcgThresholdMonths = 12
+                    selectedPassiveTypes = Category.defaultPassiveTypes
                     hasUpdatedDate = true
                     lastUpdatedDate = Date()
                 }
@@ -309,6 +351,7 @@ struct CategoryFormSheet: View {
             category.currencyCode = selectedCurrencyCode
             category.isIndividualEquity = isIndividualEquity
             category.ltcgThresholdMonths = ltcgThresholdMonths
+            category.passiveTransactionTypes = selectedPassiveTypes
             category.lastUpdatedDate = finalUpdatedDate
         } else {
             let newCategory = Category(
@@ -318,6 +361,7 @@ struct CategoryFormSheet: View {
                 lastUpdatedDate: finalUpdatedDate,
                 ltcgThresholdMonths: ltcgThresholdMonths
             )
+            newCategory.passiveTransactionTypes = selectedPassiveTypes
             modelContext.insert(newCategory)
         }
     }

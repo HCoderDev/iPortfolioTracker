@@ -16,6 +16,29 @@ final class Category {
     var targetAllocation: Double? = 0.0
     var lastUpdatedDate: Date? = nil
     var ltcgThresholdMonths: Int? = 12
+    var passiveTransactionTypesRaw: String? = nil
+    
+    static let defaultPassiveTypes: Set<String> = ["DIVIDEND", "INTEREST", "INTEREST_PAYOUT", "SURVIVAL_BENEFIT", "BONUS", "COUPON", "RENT", "ROYALTY"]
+    
+    var passiveTransactionTypes: Set<String> {
+        get {
+            if let raw = passiveTransactionTypesRaw, !raw.isEmpty {
+                let array = raw.components(separatedBy: "|||").map { $0.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() }
+                return Set(array)
+            }
+            return Category.defaultPassiveTypes
+        }
+        set {
+            passiveTransactionTypesRaw = newValue.joined(separator: "|||")
+        }
+    }
+    
+    func isPassiveTransactionType(_ type: String) -> Bool {
+        let clean = type.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        let activeTypes = passiveTransactionTypes
+        if activeTypes.contains(clean) { return true }
+        return activeTypes.contains(where: { clean.contains($0) })
+    }
     
     var targetAllocationPercent: Double {
         get { targetAllocation ?? 0.0 }
