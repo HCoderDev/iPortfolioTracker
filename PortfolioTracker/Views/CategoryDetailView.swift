@@ -239,6 +239,73 @@ struct CategoryDetailView: View {
                 .padding(14)
                 .modifier(AppTheme.cardStyle())
                 
+                // Passive Income Rules Card
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Image(systemName: "banknote.fill")
+                            .foregroundStyle(AppTheme.profit)
+                        Text("PASSIVE INCOME RULES")
+                            .font(.system(size: 10, weight: .bold))
+                            .tracking(1.2)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text("\(category.passiveTransactionTypes.count) Selected")
+                            .font(.caption2.weight(.bold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(AppTheme.profit.opacity(0.15))
+                            .foregroundStyle(AppTheme.profit)
+                            .clipShape(Capsule())
+                    }
+                    
+                    Text("Select which transaction types count as Passive Income for assets in '\(category.name)':")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    
+                    let availableTypes = [
+                        ("DIVIDEND", "Cash Dividends", "banknote.fill"),
+                        ("INTEREST", "Interest Credited / Reinvested", "percent"),
+                        ("INTEREST_PAYOUT", "Interest Payout (to Bank)", "arrow.down.right.circle.fill"),
+                        ("SURVIVAL_BENEFIT", "Survival / Money-Back Benefit", "giftcard.fill"),
+                        ("BONUS", "Accrued Reversionary Bonus", "star.fill"),
+                        ("COUPON", "Bond Coupon Payout", "doc.text.fill"),
+                        ("RENT", "Rental Income", "house.fill"),
+                        ("ROYALTY", "Royalty Income", "crown.fill")
+                    ]
+                    
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                        ForEach(availableTypes, id: \.0) { item in
+                            let isChecked = category.passiveTransactionTypes.contains(item.0)
+                            Button {
+                                var current = category.passiveTransactionTypes
+                                if isChecked {
+                                    current.remove(item.0)
+                                } else {
+                                    current.insert(item.0)
+                                }
+                                category.passiveTransactionTypes = current
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: isChecked ? "checkmark.circle.fill" : "circle")
+                                        .foregroundStyle(isChecked ? AppTheme.profit : .secondary)
+                                    Text(item.1)
+                                        .font(.system(size: 11, weight: isChecked ? .bold : .regular))
+                                        .foregroundStyle(isChecked ? .primary : .secondary)
+                                        .lineLimit(1)
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 6)
+                                .background(isChecked ? AppTheme.profit.opacity(0.08) : Color(.tertiarySystemGroupedBackground))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .padding(14)
+                .modifier(AppTheme.cardStyle())
+
                 // Convert to INR Card
                 if category.currencyCode != "INR" {
                     VStack(spacing: 12) {

@@ -1232,24 +1232,47 @@ struct PassiveIncomeView: View {
         }
     }
     
+    private var periodIncomeTransactions: [AssetTransaction] {
+        let calendar = Calendar.current
+        return baseIncomeTransactions.filter { tx in
+            if selectedPeriodType == .lifetime { return true }
+            let year = calendar.component(.year, from: tx.date)
+            if selectedPeriodType == .yearly {
+                return year == selectedYear
+            } else {
+                let month = calendar.component(.month, from: tx.date)
+                return year == selectedYear && month == selectedMonth
+            }
+        }
+    }
+
     // MARK: - Transaction History List
     @ViewBuilder
     private var incomeTransactionHistorySection: some View {
         VStack(alignment: .leading, spacing: 10) {
+            let periodTx = periodIncomeTransactions
+            let sectionTitle: String = {
+                switch selectedPeriodType {
+                case .monthly: return "Income Receipts (\(monthName(for: selectedMonth)) \(selectedYear))"
+                case .yearly: return "Income Receipts (\(selectedYear))"
+                case .lifetime: return "Income Receipts (Lifetime)"
+                }
+            }()
+            
             HStack {
-                Text("Income Transaction Receipts")
+                Text(sectionTitle)
                     .font(.headline)
                 Spacer()
-                Text("\(baseIncomeTransactions.count) items")
+                Text("\(periodTx.count) items")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             
-            let sortedTx = baseIncomeTransactions.sorted(by: { $0.date > $1.date })
-            let recentTx = Array(sortedTx.prefix(30))
+            let sortedTx = periodTx.sorted(by: { $0.date > $1.date })
+            let recentTx = Array(sortedTx.prefix(50))
             
             if recentTx.isEmpty {
-                Text("No matching income transactions logged.")
+                Text("No income transaction receipts logged for this period.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 12)
@@ -1438,16 +1461,30 @@ struct CategoryPassiveIncomeRulesSheet: View {
     
     @State private var selectedCategory: Category?
     
-    private let availableTypes = [
-        ("DIVIDEND", "Cash Dividends", "banknote.fill"),
-        ("INTEREST", "Interest Credited / Reinvested", "percent"),
-        ("INTEREST_PAYOUT", "Interest Payout (to Bank)", "arrow.down.right.circle.fill"),
-        ("SURVIVAL_BENEFIT", "Survival / Money-Back Benefit", "giftcard.fill"),
-        ("BONUS", "Accrued Reversionary Bonus", "star.fill"),
-        ("COUPON", "Bond Coupon Payout", "doc.text.fill"),
-        ("RENT", "Rental Income", "house.fill"),
-        ("ROYALTY", "Royalty Income", "crown.fill")
-    ]
+    private func categoryTransactionTypes(for category: Category) -> [(id: String, name: String, icon: String)] {
+        var baseList = [
+            ("DIVIDEND", "Cash Dividends", "banknote.fill"),
+            ("INTEREST", "Interest Credited / Reinvested", "percent"),
+            ("INTEREST_PAYOUT", "Interest Payout (to Bank)", "arrow.down.right.circle.fill"),
+            ("SURVIVAL_BENEFIT", "Survival / Money-Back Benefit", "giftcard.fill"),
+            ("BONUS", "Accrued Reversionary Bonus", "star.fill"),
+            ("COUPON", "Bond Coupon Payout", "doc.text.fill"),
+            ("RENT", "Rental Income", "house.fill"),
+            ("ROYALTY", "Royalty Income", "crown.fill")
+        ]
+        
+        let catAssets = category.assets
+        let catTx = catAssets.flatMap { $0.transactions }
+        let existingRaws = Set(catTx.map { $0.rawType.uppercased() })
+        
+        for raw in existingRaws {
+            if !baseList.contains(where: { $0.0 == raw }) && !raw.isEmpty {
+                baseList.append((raw, raw.capitalized, "tag.fill"))
+            }
+        }
+        
+        return baseList
+    }
     
     var body: some View {
         NavigationStack {
@@ -1463,6 +1500,8 @@ struct CategoryPassiveIncomeRulesSheet: View {
                 }
                 
                 if let cat = selectedCategory {
+                    let availableTypes = categoryTransactionTypes(for: cat)
+                    
                     Section("Configure Passive Income Rules for '\(cat.name)'") {
                         Text("Check the transaction types below that should be tracked as Passive Income for assets in '\(cat.name)':")
                             .font(.caption)
@@ -1470,7 +1509,7 @@ struct CategoryPassiveIncomeRulesSheet: View {
                         
                         HStack {
                             Button("Select All") {
-                                cat.passiveTransactionTypes = Set(availableTypes.map { $0.0 })
+                                cat.passiveTransactionTypes = Set(availableTypes.map { $0.id })
                             }
                             .font(.caption.weight(.bold))
                             .buttonStyle(.borderless)
@@ -1487,25 +1526,25 @@ struct CategoryPassiveIncomeRulesSheet: View {
                         }
                         .padding(.vertical, 2)
                         
-                        ForEach(availableTypes, id: \.0) { item in
-                            let isChecked = cat.passiveTransactionTypes.contains(item.0)
+                        ForEach(availableTypes, id: \.id) { item in
+                            let isChecked = cat.passiveTransactionTypes.contains(item.id)
                             Toggle(isOn: Binding(
                                 get: { isChecked },
                                 set: { newValue in
                                     var current = cat.passiveTransactionTypes
                                     if newValue {
-                                        current.insert(item.0)
+                                        current.insert(item.id)
                                     } else {
-                                        current.remove(item.0)
+                                        current.remove(item.id)
                                     }
                                     cat.passiveTransactionTypes = current
                                 }
                             )) {
                                 HStack(spacing: 8) {
-                                    Image(systemName: item.2)
+                                    Image(systemName: item.icon)
                                         .font(.caption)
                                         .foregroundStyle(AppTheme.accent)
-                                    Text(item.1)
+                                    Text(item.name)
                                         .font(.system(size: 13, weight: .medium))
                                 }
                             }
