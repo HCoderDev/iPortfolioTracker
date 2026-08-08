@@ -480,6 +480,7 @@ struct PassiveIncomeView: View {
             LazyVStack(spacing: 16) {
                 // Header Toolbar & Filters Card
                 VStack(spacing: 14) {
+                    // Row 1: Header Title
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("PASSIVE INCOME DASHBOARD")
@@ -488,41 +489,41 @@ struct PassiveIncomeView: View {
                                 .foregroundStyle(AppTheme.accent)
                             Text("Dividend & Income Insights")
                                 .font(.title3.weight(.bold))
+                                .lineLimit(1)
                         }
                         Spacer()
-                        
-                        HStack(spacing: 8) {
-                            Button {
-                                showCategoryRulesSheet = true
-                            } label: {
-                                Label("Income Rules", systemImage: "slider.horizontal.3")
-                                    .font(.system(size: 11, weight: .bold))
-                                    .lineLimit(1)
-                                    .fixedSize(horizontal: true, vertical: false)
-                                    .foregroundStyle(AppTheme.accent)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 7)
-                                    .background(AppTheme.accent.opacity(0.12))
-                                    .clipShape(Capsule())
-                            }
-                            .buttonStyle(.plain)
-                            
-                            Button {
-                                showLogIncomeSheet = true
-                            } label: {
-                                Label("Log Income", systemImage: "plus.circle.fill")
-                                    .font(.system(size: 11, weight: .bold))
-                                    .lineLimit(1)
-                                    .fixedSize(horizontal: true, vertical: false)
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 7)
-                                    .background(AppTheme.profitGradient)
-                                    .clipShape(Capsule())
-                                    .shadow(color: AppTheme.profit.opacity(0.3), radius: 4, x: 0, y: 2)
-                            }
-                            .buttonStyle(.plain)
+                    }
+                    
+                    // Row 2: Action Buttons (Income Rules & Log Income)
+                    HStack(spacing: 10) {
+                        Button {
+                            showCategoryRulesSheet = true
+                        } label: {
+                            Label("Income Rules", systemImage: "slider.horizontal.3")
+                                .font(.system(size: 12, weight: .bold))
+                                .lineLimit(1)
+                                .foregroundStyle(AppTheme.accent)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 9)
+                                .background(AppTheme.accent.opacity(0.12))
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
                         }
+                        .buttonStyle(.plain)
+                        
+                        Button {
+                            showLogIncomeSheet = true
+                        } label: {
+                            Label("Log Income", systemImage: "plus.circle.fill")
+                                .font(.system(size: 12, weight: .bold))
+                                .lineLimit(1)
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 9)
+                                .background(AppTheme.profitGradient)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                                .shadow(color: AppTheme.profit.opacity(0.3), radius: 4, x: 0, y: 2)
+                        }
+                        .buttonStyle(.plain)
                     }
                     
                     Divider()
