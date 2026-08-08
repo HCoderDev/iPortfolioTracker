@@ -18,7 +18,58 @@ final class Category {
     var ltcgThresholdMonths: Int? = 12
     var passiveTransactionTypesRaw: String? = nil
     
-    static let defaultPassiveTypes: Set<String> = ["DIVIDEND", "INTEREST", "INTEREST_PAYOUT", "SURVIVAL_BENEFIT", "BONUS", "COUPON", "RENT", "ROYALTY"]
+    func allowedPassiveTransactionTypes() -> [(id: String, name: String, icon: String)] {
+        var holdingTypes: Set<HoldingType> = Set(assets.map { $0.holdingType })
+        if holdingTypes.isEmpty {
+            let lowerName = name.lowercased()
+            if lowerName.contains("epf") || lowerName.contains("provident") {
+                holdingTypes.insert(.epf)
+            } else if lowerName.contains("lic") || lowerName.contains("insurance") || lowerName.contains("policy") || lowerName.contains("annuity") {
+                holdingTypes.insert(.insuranceAnnuity)
+            } else if lowerName.contains("fd") || lowerName.contains("fixed deposit") || lowerName.contains("rd") {
+                holdingTypes.insert(.fixedDeposit)
+            } else if lowerName.contains("post office") || lowerName.contains("ppf") || lowerName.contains("nsc") {
+                holdingTypes.insert(.postOffice)
+            } else {
+                holdingTypes.insert(.investment)
+            }
+        }
+        
+        var result: [(id: String, name: String, icon: String)] = []
+        
+        for hType in holdingTypes {
+            let config = TransactionTypeRegistry.shared.config(for: hType)
+            for txConfig in config.allowedTransactions {
+                let raw = txConfig.rawType.uppercased()
+                if raw == "BUY" || raw == "SELL" || raw == "DEPOSIT" || raw == "WITHDRAWAL" || raw == "CONTRIBUTION" ||
+                   raw == "EMPLOYEE_CONTRIBUTION" || raw == "EMPLOYER_CONTRIBUTION" || raw == "MATURITY" || raw == "SURRENDER" || raw == "PREMIUM" {
+                    continue
+                }
+                if txConfig.affectsProfit || raw.contains("DIVIDEND") || raw.contains("INTEREST") || raw.contains("BONUS") || raw.contains("SURVIVAL") || raw.contains("COUPON") || raw.contains("RENT") {
+                    if !result.contains(where: { $0.id == raw }) {
+                        result.append((id: raw, name: txConfig.displayName, icon: txConfig.iconName))
+                    }
+                }
+            }
+        }
+        
+        let catTx = assets.flatMap { $0.transactions }
+        for tx in catTx {
+            let raw = tx.rawType.uppercased()
+            if raw.contains("EMPLOYER") || raw.contains("EMPLOYEE") || raw.contains("BUY") || raw.contains("SELL") || raw.contains("CONTRIBUTION") || raw.contains("DEPOSIT") || raw.contains("MATURITY") || raw.contains("PREMIUM") {
+                continue
+            }
+            if (raw.contains("DIVIDEND") || raw.contains("INTEREST") || raw.contains("BONUS") || raw.contains("SURVIVAL") || raw.contains("COUPON") || raw.contains("RENT") || raw.contains("ROYALTY")) && !result.contains(where: { $0.id == raw }) {
+                result.append((id: raw, name: raw.capitalized, icon: "tag.fill"))
+            }
+        }
+        
+        if result.isEmpty {
+            result.append((id: "DIVIDEND", name: "Dividend Received", icon: "gift.fill"))
+        }
+        
+        return result
+    }
     
     var passiveTransactionTypes: Set<String> {
         get {
@@ -26,7 +77,7 @@ final class Category {
                 let array = raw.components(separatedBy: "|||").map { $0.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() }
                 return Set(array)
             }
-            return Category.defaultPassiveTypes
+            return Set(allowedPassiveTransactionTypes().map { $0.id })
         }
         set {
             passiveTransactionTypesRaw = newValue.joined(separator: "|||")
@@ -35,6 +86,11 @@ final class Category {
     
     func isPassiveTransactionType(_ type: String) -> Bool {
         let clean = type.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        if clean.contains("EMPLOYER") || clean.contains("EMPLOYEE") || clean.contains("CONTRIBUTION") ||
+           clean == "BUY" || clean == "SELL" || clean == "DEPOSIT" || clean == "WITHDRAWAL" ||
+           clean == "MATURITY" || clean == "SURRENDER" || clean == "PREMIUM" {
+            return false
+        }
         let activeTypes = passiveTransactionTypes
         if activeTypes.contains(clean) { return true }
         return activeTypes.contains(where: { clean.contains($0) })

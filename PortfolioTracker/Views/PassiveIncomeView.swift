@@ -49,14 +49,19 @@ struct PassiveIncomeView: View {
     
     // Check if a transaction is passive income based on the Asset Category's configured passive rules
     private func isPassiveIncome(_ tx: AssetTransaction) -> Bool {
+        let raw = tx.rawType.uppercased()
+        if raw.contains("EMPLOYER") || raw.contains("EMPLOYEE") || raw.contains("CONTRIBUTION") ||
+           raw == "BUY" || raw == "SELL" || raw == "DEPOSIT" || raw == "WITHDRAWAL" ||
+           raw == "MATURITY" || raw == "SURRENDER" || raw == "PREMIUM" {
+            return false
+        }
         if tx.asset?.holdingType.isNonUnitized == true && tx.config.closesAsset {
             // Principal maturity payouts are non-income capital returns
             return false
         }
         guard let category = tx.asset?.category else {
-            let raw = tx.rawType.uppercased()
             if raw.contains("DIVIDEND") || raw.contains("INTEREST") || raw.contains("COUPON") ||
-                raw.contains("BONUS") || raw.contains("SURVIVAL_BENEFIT") || raw.contains("RENT") ||
+                raw.contains("BONUS") || raw.contains("SURVIVAL") || raw.contains("RENT") ||
                 raw.contains("ROYALTY") || tx.type == .dividend {
                 return true
             }
@@ -491,10 +496,12 @@ struct PassiveIncomeView: View {
                                 showCategoryRulesSheet = true
                             } label: {
                                 Label("Income Rules", systemImage: "slider.horizontal.3")
-                                    .font(.system(size: 12, weight: .bold))
+                                    .font(.system(size: 11, weight: .bold))
+                                    .lineLimit(1)
+                                    .fixedSize(horizontal: true, vertical: false)
                                     .foregroundStyle(AppTheme.accent)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 8)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 7)
                                     .background(AppTheme.accent.opacity(0.12))
                                     .clipShape(Capsule())
                             }
@@ -504,10 +511,12 @@ struct PassiveIncomeView: View {
                                 showLogIncomeSheet = true
                             } label: {
                                 Label("Log Income", systemImage: "plus.circle.fill")
-                                    .font(.system(size: 13, weight: .bold))
+                                    .font(.system(size: 11, weight: .bold))
+                                    .lineLimit(1)
+                                    .fixedSize(horizontal: true, vertical: false)
                                     .foregroundStyle(.white)
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 8)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 7)
                                     .background(AppTheme.profitGradient)
                                     .clipShape(Capsule())
                                     .shadow(color: AppTheme.profit.opacity(0.3), radius: 4, x: 0, y: 2)
@@ -518,22 +527,13 @@ struct PassiveIncomeView: View {
                     
                     Divider()
                     
-                    // Period Type & Currency Selector
-                    HStack(spacing: 12) {
-                        Picker("Period Type", selection: $selectedPeriodType) {
-                            ForEach(PeriodType.allCases) { type in
-                                Text(type.rawValue).tag(type)
-                            }
+                    // Period Type Selector
+                    Picker("Period Type", selection: $selectedPeriodType) {
+                        ForEach(PeriodType.allCases) { type in
+                            Text(type.rawValue).tag(type)
                         }
-                        .pickerStyle(.segmented)
-                        
-                        Picker("Currency Display", selection: $displayInINR) {
-                            Text("INR (₹)").tag(true)
-                            Text("Native").tag(false)
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(maxWidth: 160)
                     }
+                    .pickerStyle(.segmented)
                     
                     // Period Controls & Filters Row
                     HStack(spacing: 12) {
@@ -1500,7 +1500,7 @@ struct CategoryPassiveIncomeRulesSheet: View {
                 }
                 
                 if let cat = selectedCategory {
-                    let availableTypes = categoryTransactionTypes(for: cat)
+                    let availableTypes = cat.allowedPassiveTransactionTypes()
                     
                     Section("Configure Passive Income Rules for '\(cat.name)'") {
                         Text("Check the transaction types below that should be tracked as Passive Income for assets in '\(cat.name)':")

@@ -262,33 +262,24 @@ struct CategoryDetailView: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                     
-                    let availableTypes = [
-                        ("DIVIDEND", "Cash Dividends", "banknote.fill"),
-                        ("INTEREST", "Interest Credited / Reinvested", "percent"),
-                        ("INTEREST_PAYOUT", "Interest Payout (to Bank)", "arrow.down.right.circle.fill"),
-                        ("SURVIVAL_BENEFIT", "Survival / Money-Back Benefit", "giftcard.fill"),
-                        ("BONUS", "Accrued Reversionary Bonus", "star.fill"),
-                        ("COUPON", "Bond Coupon Payout", "doc.text.fill"),
-                        ("RENT", "Rental Income", "house.fill"),
-                        ("ROYALTY", "Royalty Income", "crown.fill")
-                    ]
+                    let availableTypes = category.allowedPassiveTransactionTypes()
                     
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                        ForEach(availableTypes, id: \.0) { item in
-                            let isChecked = category.passiveTransactionTypes.contains(item.0)
+                        ForEach(availableTypes, id: \.id) { item in
+                            let isChecked = category.passiveTransactionTypes.contains(item.id)
                             Button {
                                 var current = category.passiveTransactionTypes
                                 if isChecked {
-                                    current.remove(item.0)
+                                    current.remove(item.id)
                                 } else {
-                                    current.insert(item.0)
+                                    current.insert(item.id)
                                 }
                                 category.passiveTransactionTypes = current
                             } label: {
                                 HStack(spacing: 6) {
                                     Image(systemName: isChecked ? "checkmark.circle.fill" : "circle")
                                         .foregroundStyle(isChecked ? AppTheme.profit : .secondary)
-                                    Text(item.1)
+                                    Text(item.name)
                                         .font(.system(size: 11, weight: isChecked ? .bold : .regular))
                                         .foregroundStyle(isChecked ? .primary : .secondary)
                                         .lineLimit(1)

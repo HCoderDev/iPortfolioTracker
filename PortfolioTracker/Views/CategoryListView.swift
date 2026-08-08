@@ -188,7 +188,7 @@ struct CategoryFormSheet: View {
     @State private var selectedCurrencyCode: String = ""
     @State private var isIndividualEquity: Bool = false
     @State private var ltcgThresholdMonths: Int = 12
-    @State private var selectedPassiveTypes: Set<String> = Category.defaultPassiveTypes
+    @State private var selectedPassiveTypes: Set<String> = []
     @State private var hasUpdatedDate: Bool = false
     @State private var lastUpdatedDate: Date = Date()
     
@@ -233,33 +233,25 @@ struct CategoryFormSheet: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     
-                    let availableTypes = [
-                        ("DIVIDEND", "Cash Dividends", "banknote.fill"),
-                        ("INTEREST", "Interest Credited / Reinvested", "percent"),
-                        ("INTEREST_PAYOUT", "Interest Payout (to Bank)", "arrow.down.right.circle.fill"),
-                        ("SURVIVAL_BENEFIT", "Survival / Money-Back Benefit", "giftcard.fill"),
-                        ("BONUS", "Accrued Reversionary Bonus", "star.fill"),
-                        ("COUPON", "Bond Coupon Payout", "doc.text.fill"),
-                        ("RENT", "Rental Income", "house.fill"),
-                        ("ROYALTY", "Royalty Income", "crown.fill")
-                    ]
+                    let dummyCat = category ?? Category(name: name, currencyCode: selectedCurrencyCode)
+                    let availableTypes = dummyCat.allowedPassiveTransactionTypes()
                     
-                    ForEach(availableTypes, id: \.0) { item in
+                    ForEach(availableTypes, id: \.id) { item in
                         Toggle(isOn: Binding(
-                            get: { selectedPassiveTypes.contains(item.0) },
+                            get: { selectedPassiveTypes.contains(item.id) },
                             set: { isSelected in
                                 if isSelected {
-                                    selectedPassiveTypes.insert(item.0)
+                                    selectedPassiveTypes.insert(item.id)
                                 } else {
-                                    selectedPassiveTypes.remove(item.0)
+                                    selectedPassiveTypes.remove(item.id)
                                 }
                             }
                         )) {
                             HStack(spacing: 8) {
-                                Image(systemName: item.2)
+                                Image(systemName: item.icon)
                                     .font(.caption)
                                     .foregroundStyle(AppTheme.accent)
-                                Text(item.1)
+                                Text(item.name)
                                     .font(.system(size: 13, weight: .medium))
                             }
                         }
@@ -332,7 +324,7 @@ struct CategoryFormSheet: View {
                     selectedCurrencyCode = defaultCurrency?.code ?? ""
                     isIndividualEquity = false
                     ltcgThresholdMonths = 12
-                    selectedPassiveTypes = Category.defaultPassiveTypes
+                    selectedPassiveTypes = Set(Category(name: name, currencyCode: selectedCurrencyCode).allowedPassiveTransactionTypes().map { $0.id })
                     hasUpdatedDate = true
                     lastUpdatedDate = Date()
                 }
