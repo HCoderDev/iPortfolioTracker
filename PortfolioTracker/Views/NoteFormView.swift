@@ -6,12 +6,15 @@
 import SwiftUI
 import SwiftData
 
-struct AssetNoteFormView: View {
+struct AssetNoteFormSheet: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     
-    let asset: Asset
+    @Query(sort: \Asset.name) private var allAssets: [Asset]
     
+    let defaultAsset: Asset?
+    
+    @State private var selectedAsset: Asset?
     @State private var title = ""
     @State private var noteDescription = ""
     @State private var selectedDate = Date()
@@ -25,56 +28,68 @@ struct AssetNoteFormView: View {
     }
     
     private var isValid: Bool {
-        !trimmedTitle.isEmpty && !trimmedDescription.isEmpty
+        !trimmedTitle.isEmpty && !trimmedDescription.isEmpty && (selectedAsset != nil || defaultAsset != nil)
     }
     
     var body: some View {
-        Form {
-            noteFields
-            
-            Section {
-                Button(action: saveNote) {
-                    HStack {
-                        Spacer()
-                        Text("Save Note")
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.white)
-                        Spacer()
+        NavigationStack {
+            Form {
+                Section("Asset Association") {
+                    if let asset = defaultAsset {
+                        HStack {
+                            Text("Asset")
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Text(asset.name)
+                                .fontWeight(.semibold)
+                        }
+                    } else {
+                        Picker("Select Asset", selection: $selectedAsset) {
+                            Text("Select an asset...").tag(nil as Asset?)
+                            ForEach(allAssets) { asset in
+                                Text(asset.name).tag(asset as Asset?)
+                            }
+                        }
+                        .pickerStyle(.menu)
                     }
-                    .padding(.vertical, 8)
                 }
-                .listRowBackground(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(isValid ? AppTheme.warning : Color.gray.opacity(0.3))
-                )
-                .disabled(!isValid)
+                
+                Section("Investment Thesis / Thought Process Note") {
+                    TextField("Title (e.g. Q3 Earnings Review, Buy Rationale)", text: $title)
+                    DatePicker("Note Date", selection: $selectedDate, displayedComponents: .date)
+                    TextField("Note Details / Rationale...", text: $noteDescription, axis: .vertical)
+                        .lineLimit(5...10)
+                }
             }
-        }
-        .navigationTitle("Add Note")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") { dismiss() }
+            .navigationTitle("Add Asset Note")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        saveNote()
+                    }
+                    .disabled(!isValid)
+                    .bold()
+                }
             }
-        }
-    }
-    
-    @ViewBuilder
-    private var noteFields: some View {
-        Section("Note Details") {
-            TextField("Title", text: $title)
-            TextField("Description", text: $noteDescription, axis: .vertical)
-                .lineLimit(4...8)
-            DatePicker("Note Date", selection: $selectedDate, displayedComponents: .date)
+            .onAppear {
+                if selectedAsset == nil {
+                    selectedAsset = defaultAsset ?? allAssets.first
+                }
+            }
         }
     }
     
     private func saveNote() {
+        guard let targetAsset = defaultAsset ?? selectedAsset else { return }
         let note = AssetNote(
             title: trimmedTitle,
             noteDescription: trimmedDescription,
             date: selectedDate,
-            asset: asset
+            asset: targetAsset
         )
         modelContext.insert(note)
         dismiss()

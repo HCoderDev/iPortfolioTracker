@@ -26,6 +26,12 @@ struct MarketAssetDetailView: View {
     @State private var showValueAnalysisDetail = false
     @State private var showDCFAnalysisForm = false
     
+    // Notes & Reminders Sheet Triggers
+    @State private var showAddNoteSheet = false
+    @State private var noteToEdit: AssetNote?
+    @State private var showAddReminderSheet = false
+    @State private var reminderToEdit: AssetReminder?
+    
     // Navigation Tab
     @State private var selectedTab: MarketTab = .overview
     
@@ -38,6 +44,8 @@ struct MarketAssetDetailView: View {
         case transactions = "Transactions"
         case inflows = "Inflows"
         case valuation = "Valuation"
+        case notes = "Notes"
+        case reminders = "Reminders"
         
         var id: String { rawValue }
     }
@@ -236,6 +244,20 @@ struct MarketAssetDetailView: View {
                     AssetInflowsView(asset: asset, displayInINR: displayInINR, currentRate: currentRate)
                 case .valuation:
                     valuationTabContent
+                case .notes:
+                    AssetNotesSectionCard(
+                        asset: asset,
+                        onAddNote: { showAddNoteSheet = true },
+                        onEditNote: { note in noteToEdit = note }
+                    )
+                    .padding(.horizontal)
+                case .reminders:
+                    AssetRemindersSectionCard(
+                        asset: asset,
+                        onAddReminder: { showAddReminderSheet = true },
+                        onEditReminder: { reminder in reminderToEdit = reminder }
+                    )
+                    .padding(.horizontal)
                 }
             }
             .padding(.bottom, 30)
@@ -244,8 +266,25 @@ struct MarketAssetDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button(action: { showAddTransaction = true }) {
-                    Label("Add Transaction", systemImage: "plus")
+                Menu {
+                    Button {
+                        showAddTransaction = true
+                    } label: {
+                        Label("Add Transaction", systemImage: "plus.circle")
+                    }
+                    Button {
+                        showAddNoteSheet = true
+                    } label: {
+                        Label("Add Note", systemImage: "note.text.badge.plus")
+                    }
+                    Button {
+                        showAddReminderSheet = true
+                    } label: {
+                        Label("Schedule Reminder", systemImage: "bell.badge")
+                    }
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.title3)
                 }
             }
         }
@@ -267,6 +306,18 @@ struct MarketAssetDetailView: View {
             if let analysis = asset.valueAnalysis {
                 StockValueAnalysisDetailSheet(analysis: analysis)
             }
+        }
+        .sheet(isPresented: $showAddNoteSheet) {
+            AssetNoteFormSheet(defaultAsset: asset)
+        }
+        .sheet(item: $noteToEdit) { note in
+            EditAssetNoteSheet(note: note)
+        }
+        .sheet(isPresented: $showAddReminderSheet) {
+            AssetReminderFormSheet(reminder: nil, defaultAsset: asset)
+        }
+        .sheet(item: $reminderToEdit) { reminder in
+            AssetReminderFormSheet(reminder: reminder, defaultAsset: asset)
         }
         .alert("Update Current Price", isPresented: $showUpdatePriceAlert) {
             TextField("Price in \(categoryCurrencyCode)", text: $priceInput)
@@ -697,6 +748,22 @@ struct MarketAssetDetailView: View {
                 .background(RoundedRectangle(cornerRadius: 14).fill(Color(.secondarySystemBackground)))
                 .padding(.horizontal)
             }
+            
+            // Investment Thesis & Notes Card
+            AssetNotesSectionCard(
+                asset: asset,
+                onAddNote: { showAddNoteSheet = true },
+                onEditNote: { note in noteToEdit = note }
+            )
+            .padding(.horizontal)
+            
+            // Reminders & Watch Events Card
+            AssetRemindersSectionCard(
+                asset: asset,
+                onAddReminder: { showAddReminderSheet = true },
+                onEditReminder: { reminder in reminderToEdit = reminder }
+            )
+            .padding(.horizontal)
         }
     }
     

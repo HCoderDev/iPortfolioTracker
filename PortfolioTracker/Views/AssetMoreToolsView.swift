@@ -258,6 +258,35 @@ struct AssetMoreToolsView: View {
                         
                         Spacer()
                         
+                    }
+                    .padding(16)
+                    .background(Color(.systemGray6))
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                }
+                .buttonStyle(.plain)
+                
+                // Card 7: Investment Rationale Notes Journal
+                NavigationLink(destination: AllAssetNotesView()) {
+                    HStack(spacing: 16) {
+                        Image(systemName: "note.text")
+                            .font(.title2)
+                            .foregroundStyle(.white)
+                            .frame(width: 44, height: 44)
+                            .background(AppTheme.warning)
+                            .clipShape(Circle())
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Investment Rationale Notes")
+                                .font(.headline)
+                                .foregroundStyle(.primary)
+                            Text("Document buy/sell logic, earnings updates, and investment thought process across all assets")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.leading)
+                        }
+                        
+                        Spacer()
+                        
                         Image(systemName: "chevron.right")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
@@ -267,7 +296,38 @@ struct AssetMoreToolsView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 16))
                 }
                 .buttonStyle(.plain)
-
+                
+                // Card 8: Reminders & Watch Events
+                NavigationLink(destination: RemindersListView()) {
+                    HStack(spacing: 16) {
+                        Image(systemName: "bell.fill")
+                            .font(.title2)
+                            .foregroundStyle(.white)
+                            .frame(width: 44, height: 44)
+                            .background(AppTheme.accent)
+                            .clipShape(Circle())
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Reminders & Watch Events")
+                                .font(.headline)
+                                .foregroundStyle(.primary)
+                            Text("View and schedule asset earnings watch, policy renewals, or maturity reminders")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.leading)
+                        }
+                        
+                        Spacer()
+                        
+                        Image(systemName: "chevron.right")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(16)
+                    .background(Color(.systemGray6))
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                }
+                .buttonStyle(.plain)
 
             }
             .padding()
