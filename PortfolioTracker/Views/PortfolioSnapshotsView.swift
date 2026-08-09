@@ -65,6 +65,19 @@ struct PortfolioSnapshotsView: View {
                             "Net Worth": isProfit ? AppTheme.profit : AppTheme.loss
                         ])
                         .chartLegend(position: .bottom)
+                        .chartYAxis {
+                            AxisMarks { value in
+                                AxisGridLine()
+                                AxisTick()
+                                if let doubleVal = value.as(Double.self) {
+                                    AxisValueLabel {
+                                        Text(doubleVal.formattedCompactChart(currencyCode: "INR"))
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
                         .frame(height: 240)
                         .padding(.horizontal)
                     }

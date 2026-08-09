@@ -133,6 +133,19 @@ struct TimelineChartView: View {
                     "Portfolio Value": isProfit ? AppTheme.profit : AppTheme.loss
                 ])
                 .chartLegend(position: .bottom)
+                .chartYAxis {
+                    AxisMarks { value in
+                        AxisGridLine()
+                        AxisTick()
+                        if let doubleVal = value.as(Double.self) {
+                            AxisValueLabel {
+                                Text(doubleVal.formattedCompactChart(currencyCode: currencyCode))
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
                 .frame(height: 220)
                 .padding(.horizontal)
             }

@@ -158,17 +158,48 @@ extension Double {
     }
     
     var formattedCompact: String {
-        if self == 0 { return "-" }
+        formattedCompactChart(currencyCode: "INR")
+    }
+    
+    func formattedCompactChart(currencyCode: String = "INR") -> String {
+        if self == 0 { return "0" }
         let sign = self < 0 ? "-" : ""
         let absVal = abs(self)
-        if absVal >= 1_000_000_000 {
-            return "\(sign)\(String(format: "%.1fB", absVal / 1_000_000_000))"
-        } else if absVal >= 1_000_000 {
-            return "\(sign)\(String(format: "%.1fM", absVal / 1_000_000))"
-        } else if absVal >= 1_000 {
-            return "\(sign)\(String(format: "%.1fK", absVal / 1_000))"
+        
+        let isINR = currencyCode.uppercased() == "INR" || currencyCode.isEmpty
+        
+        if isINR {
+            if absVal >= 10_000_000 { // 1 Crore (10 Million)
+                let val = absVal / 10_000_000
+                let formatted = val.truncatingRemainder(dividingBy: 1) == 0 ? String(format: "%.0f", val) : String(format: "%.1f", val)
+                return "\(sign)\(formatted) Cr"
+            } else if absVal >= 100_000 { // 1 Lakh (100 Thousand)
+                let val = absVal / 100_000
+                let formatted = val.truncatingRemainder(dividingBy: 1) == 0 ? String(format: "%.0f", val) : String(format: "%.1f", val)
+                return "\(sign)\(formatted) L"
+            } else if absVal >= 1_000 { // 1 Thousand
+                let val = absVal / 1_000
+                let formatted = val.truncatingRemainder(dividingBy: 1) == 0 ? String(format: "%.0f", val) : String(format: "%.1f", val)
+                return "\(sign)\(formatted) K"
+            } else {
+                return "\(sign)\(String(format: "%.0f", absVal))"
+            }
         } else {
-            return "\(sign)\(String(format: "%.0f", absVal))"
+            if absVal >= 1_000_000_000 {
+                let val = absVal / 1_000_000_000
+                let formatted = val.truncatingRemainder(dividingBy: 1) == 0 ? String(format: "%.0f", val) : String(format: "%.1f", val)
+                return "\(sign)\(formatted)B"
+            } else if absVal >= 1_000_000 {
+                let val = absVal / 1_000_000
+                let formatted = val.truncatingRemainder(dividingBy: 1) == 0 ? String(format: "%.0f", val) : String(format: "%.1f", val)
+                return "\(sign)\(formatted)M"
+            } else if absVal >= 1_000 {
+                let val = absVal / 1_000
+                let formatted = val.truncatingRemainder(dividingBy: 1) == 0 ? String(format: "%.0f", val) : String(format: "%.1f", val)
+                return "\(sign)\(formatted)K"
+            } else {
+                return "\(sign)\(String(format: "%.0f", absVal))"
+            }
         }
     }
 }

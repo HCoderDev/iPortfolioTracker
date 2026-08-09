@@ -7,6 +7,27 @@ import Foundation
 import SwiftData
 import SwiftUI
 
+enum XirrMode: String, CaseIterable, Identifiable {
+    case lifetime = "Lifetime XIRR"
+    case active = "Active XIRR"
+    
+    var id: String { rawValue }
+    
+    var title: String {
+        switch self {
+        case .lifetime: return "Lifetime XIRR"
+        case .active: return "Active XIRR"
+        }
+    }
+    
+    var shortTitle: String {
+        switch self {
+        case .lifetime: return "Lifetime"
+        case .active: return "Active"
+        }
+    }
+}
+
 enum PortfolioMetrics {
     static func defaultCurrency(in currencies: [Currency]) -> Currency? {
         currencies.first(where: \.isDefault) ?? currencies.first
@@ -158,7 +179,15 @@ enum PortfolioMetrics {
         asset.transactions.filter { $0.type == .dividend || $0.rawType.uppercased().contains("DIVIDEND") }.reduce(0.0) { $0 + $1.amount }
     }
     
-    static func cashFlows(for asset: Asset, valuationDate: Date = Date()) -> [CashFlow] {
+    static func cashFlows(for asset: Asset, mode: XirrMode = .lifetime, valuationDate: Date = Date()) -> [CashFlow] {
+        if mode == .active {
+            return activeCashFlows(for: asset, valuationDate: valuationDate)
+        } else {
+            return lifetimeCashFlows(for: asset, valuationDate: valuationDate)
+        }
+    }
+    
+    private static func lifetimeCashFlows(for asset: Asset, valuationDate: Date = Date()) -> [CashFlow] {
         let transactions = orderedTransactions(asset.transactions)
         var cashFlows: [CashFlow] = []
         
@@ -181,8 +210,42 @@ enum PortfolioMetrics {
         return cashFlows
     }
     
-    static func xirr(for asset: Asset, valuationDate: Date = Date()) -> Double? {
-        XirrCalculator.calculateXirr(cashFlows: cashFlows(for: asset, valuationDate: valuationDate))
+    private static func activeCashFlows(for asset: Asset, valuationDate: Date = Date()) -> [CashFlow] {
+        let hasSellTx = asset.transactions.contains { $0.type == .sell || $0.rawType.uppercased().contains("SELL") }
+        if asset.holdingType.isNonUnitized || !hasSellTx {
+            return lifetimeCashFlows(for: asset, valuationDate: valuationDate)
+        }
+        
+        let fifoResult = FifoCalculator.calculate(transactions: asset.transactions)
+        let holdings = fifoResult.holdings
+        guard !holdings.isEmpty else { return [] }
+        
+        var cashFlows: [CashFlow] = []
+        
+        for lot in holdings {
+            let cost = lot.remainingUnits * lot.buyPrice
+            cashFlows.append(CashFlow(amount: -cost, date: lot.date))
+        }
+        
+        if let oldestActiveDate = holdings.map({ $0.date }).min() {
+            let divTxs = asset.transactions.filter {
+                ($0.type == .dividend || $0.rawType.uppercased().contains("DIVIDEND") || $0.rawType.uppercased().contains("INTEREST") || $0.rawType.uppercased().contains("COUPON")) && $0.date >= oldestActiveDate
+            }
+            for tx in divTxs {
+                cashFlows.append(CashFlow(amount: tx.amount, date: tx.date))
+            }
+        }
+        
+        let currVal = currentValue(for: asset)
+        if currVal > 0 && !isSoldOff(asset) {
+            cashFlows.append(CashFlow(amount: currVal, date: valuationDate))
+        }
+        
+        return cashFlows
+    }
+    
+    static func xirr(for asset: Asset, mode: XirrMode = .lifetime, valuationDate: Date = Date()) -> Double? {
+        XirrCalculator.calculateXirr(cashFlows: cashFlows(for: asset, mode: mode, valuationDate: valuationDate))
     }
     
     static func holdingDurationText(for asset: Asset, asOf date: Date = Date()) -> String {
@@ -284,7 +347,15 @@ enum PortfolioMetrics {
         }
     }
     
-    static func cashFlowsInINR(for asset: Asset, rate: Double, valuationDate: Date = Date()) -> [CashFlow] {
+    static func cashFlowsInINR(for asset: Asset, rate: Double, mode: XirrMode = .lifetime, valuationDate: Date = Date()) -> [CashFlow] {
+        if mode == .active {
+            return activeCashFlowsInINR(for: asset, rate: rate, valuationDate: valuationDate)
+        } else {
+            return lifetimeCashFlowsInINR(for: asset, rate: rate, valuationDate: valuationDate)
+        }
+    }
+    
+    private static func lifetimeCashFlowsInINR(for asset: Asset, rate: Double, valuationDate: Date = Date()) -> [CashFlow] {
         let transactions = orderedTransactions(asset.transactions)
         var cashFlows: [CashFlow] = []
         
@@ -309,8 +380,43 @@ enum PortfolioMetrics {
         return cashFlows
     }
     
-    static func xirrInINR(for asset: Asset, rate: Double, valuationDate: Date = Date()) -> Double? {
-        XirrCalculator.calculateXirr(cashFlows: cashFlowsInINR(for: asset, rate: rate, valuationDate: valuationDate))
+    private static func activeCashFlowsInINR(for asset: Asset, rate: Double, valuationDate: Date = Date()) -> [CashFlow] {
+        let hasSellTx = asset.transactions.contains { $0.type == .sell || $0.rawType.uppercased().contains("SELL") }
+        if asset.holdingType.isNonUnitized || !hasSellTx {
+            return lifetimeCashFlowsInINR(for: asset, rate: rate, valuationDate: valuationDate)
+        }
+        
+        let fifoResult = FifoCalculator.calculateInINR(transactions: asset.transactions, categoryExchangeRate: rate)
+        let holdings = fifoResult.holdings
+        guard !holdings.isEmpty else { return [] }
+        
+        var cashFlows: [CashFlow] = []
+        
+        for lot in holdings {
+            let costINR = lot.remainingUnits * lot.buyPriceINR
+            cashFlows.append(CashFlow(amount: -costINR, date: lot.date))
+        }
+        
+        if let oldestActiveDate = holdings.map({ $0.date }).min() {
+            let divTxs = asset.transactions.filter {
+                ($0.type == .dividend || $0.rawType.uppercased().contains("DIVIDEND") || $0.rawType.uppercased().contains("INTEREST") || $0.rawType.uppercased().contains("COUPON")) && $0.date >= oldestActiveDate
+            }
+            for tx in divTxs {
+                let txRate = tx.inrExchangeRate ?? rate
+                cashFlows.append(CashFlow(amount: tx.amount * txRate, date: tx.date))
+            }
+        }
+        
+        let currValINR = currentValueInINR(for: asset, rate: rate)
+        if currValINR > 0 && !isSoldOff(asset) {
+            cashFlows.append(CashFlow(amount: currValINR, date: valuationDate))
+        }
+        
+        return cashFlows
+    }
+    
+    static func xirrInINR(for asset: Asset, rate: Double, mode: XirrMode = .lifetime, valuationDate: Date = Date()) -> Double? {
+        XirrCalculator.calculateXirr(cashFlows: cashFlowsInINR(for: asset, rate: rate, mode: mode, valuationDate: valuationDate))
     }
     
     // MARK: - Transaction Count Helpers

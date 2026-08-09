@@ -20,6 +20,7 @@ struct MarketAssetDetailView: View {
     @State private var priceInput = ""
     @State private var showAddTransaction = false
     @State private var transactionToEdit: AssetTransaction?
+    @State private var selectedXirrMode: XirrMode = .lifetime
     
     // Valuation Sheet Triggers
     @State private var showValueAnalysisForm = false
@@ -111,9 +112,9 @@ struct MarketAssetDetailView: View {
     
     private var xirrValue: Double? {
         if isConversionActive {
-            return PortfolioMetrics.xirrInINR(for: asset, rate: currentRate)
+            return PortfolioMetrics.xirrInINR(for: asset, rate: currentRate, mode: selectedXirrMode)
         } else {
-            return PortfolioMetrics.xirr(for: asset)
+            return PortfolioMetrics.xirr(for: asset, mode: selectedXirrMode)
         }
     }
     
@@ -465,18 +466,35 @@ struct MarketAssetDetailView: View {
                     .background(RoundedRectangle(cornerRadius: 12).fill(Color(.tertiarySystemBackground)))
                 }
                 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("XIRR (CAGR)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Menu {
+                            Picker("XIRR Mode", selection: $selectedXirrMode) {
+                                ForEach(XirrMode.allCases) { mode in
+                                    Text(mode.title).tag(mode)
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 3) {
+                                Text(selectedXirrMode.shortTitle + " XIRR")
+                                    .font(.caption2)
+                                    .lineLimit(1)
+                                Image(systemName: "chevron.down")
+                                    .font(.caption2)
+                            }
+                            .foregroundStyle(.secondary)
+                        }
+                    }
                     if let rate = xirrValue {
-                        Text(String(format: "%.2f%%", rate * 100))
+                        Text(String(format: "%.2f%%", rate))
                             .font(.headline)
                             .fontWeight(.bold)
+                            .lineLimit(1)
                             .foregroundStyle(rate >= 0 ? AppTheme.gain : AppTheme.loss)
                     } else {
                         Text("N/A")
                             .font(.headline)
+                            .lineLimit(1)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -702,19 +720,34 @@ struct MarketAssetDetailView: View {
                                 .foregroundStyle(totalGainLoss >= 0 ? AppTheme.gain : AppTheme.loss)
                         }
                         Spacer()
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text("Overall XIRR")
-                                .font(.caption)
+                        VStack(alignment: .trailing, spacing: 4) {
+                            Menu {
+                                Picker("XIRR Mode", selection: $selectedXirrMode) {
+                                    ForEach(XirrMode.allCases) { mode in
+                                        Text(mode.title).tag(mode)
+                                    }
+                                }
+                            } label: {
+                                HStack(spacing: 3) {
+                                    Text(selectedXirrMode.shortTitle + " XIRR")
+                                        .font(.caption)
+                                        .lineLimit(1)
+                                    Image(systemName: "chevron.down")
+                                        .font(.caption2)
+                                }
                                 .foregroundStyle(.secondary)
+                            }
                             if let xirr = xirrValue {
-                                Text(String(format: "%.2f%%", xirr * 100))
+                                Text(String(format: "%.2f%%", xirr))
                                     .font(.title3)
                                     .fontWeight(.bold)
+                                    .lineLimit(1)
                                     .foregroundStyle(xirr >= 0 ? AppTheme.gain : AppTheme.loss)
                             } else {
                                 Text("N/A")
                                     .font(.title3)
                                     .fontWeight(.bold)
+                                    .lineLimit(1)
                                     .foregroundStyle(.secondary)
                             }
                         }

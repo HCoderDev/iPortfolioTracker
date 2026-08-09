@@ -23,6 +23,7 @@ struct CategoryDetailView: View {
     @State private var importMode: ImportMode = .transactions
     @State private var showUpdateDatePicker = false
     @State private var customDateInput = Date()
+    @State private var selectedXirrMode: XirrMode = .lifetime
     
     private var assetsBySubCategory: [(subCategory: SubCategory?, assets: [Asset])] {
         let active = filteredActiveAssets
@@ -94,7 +95,7 @@ struct CategoryDetailView: View {
                 totalLifetimeRetrieved += fifoResult.lifetimeRetrieved
                 totalLifetimeDividend += div
                 
-                allCashFlows.append(contentsOf: PortfolioMetrics.cashFlowsInINR(for: asset, rate: rate))
+                allCashFlows.append(contentsOf: PortfolioMetrics.cashFlowsInINR(for: asset, rate: rate, mode: selectedXirrMode))
             } else {
                 let currentValue = PortfolioMetrics.currentValue(for: asset)
                 let invested = PortfolioMetrics.investedValue(for: asset)
@@ -108,7 +109,7 @@ struct CategoryDetailView: View {
                 totalLifetimeRetrieved += fifoResult.lifetimeRetrieved
                 totalLifetimeDividend += div
                 
-                allCashFlows.append(contentsOf: PortfolioMetrics.cashFlows(for: asset))
+                allCashFlows.append(contentsOf: PortfolioMetrics.cashFlows(for: asset, mode: selectedXirrMode))
             }
         }
         
@@ -694,12 +695,26 @@ struct CategoryDetailView: View {
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 4) {
-                    Text("XIRR")
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.7))
+                    Menu {
+                        Picker("XIRR Mode", selection: $selectedXirrMode) {
+                            ForEach(XirrMode.allCases) { mode in
+                                Text(mode.title).tag(mode)
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Text(selectedXirrMode.shortTitle + " XIRR")
+                                .font(.caption)
+                                .lineLimit(1)
+                            Image(systemName: "chevron.down")
+                                .font(.caption2)
+                        }
+                        .foregroundStyle(.white.opacity(0.8))
+                    }
                     Text(data.xirr != nil ? String(format: "%.2f%%", data.xirr!) : "N/A")
                         .font(.headline)
                         .fontWeight(.bold)
+                        .lineLimit(1)
                         .foregroundStyle(.white)
                 }
             }
