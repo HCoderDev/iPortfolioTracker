@@ -75,34 +75,38 @@ enum PortfolioMetrics {
         return abs(total) < 0.000001 ? 0.0 : total
     }
     
-    static func totalUnits(for asset: Asset) -> Double {
+    static func totalUnits(for asset: Asset, asOf date: Date? = nil) -> Double {
         if asset.holdingType.isNonUnitized {
             return 1.0
         }
-        return totalUnits(for: asset.transactions)
+        let txs = date != nil ? asset.transactions.filter { $0.date <= date! } : asset.transactions
+        return totalUnits(for: txs)
     }
 
-    static func isSoldOff(_ asset: Asset) -> Bool {
+    static func isSoldOff(_ asset: Asset, asOf date: Date? = nil) -> Bool {
         if asset.isCompleted {
             return true
         }
+        let txs = date != nil ? asset.transactions.filter { $0.date <= date! } : asset.transactions
         if asset.holdingType.isNonUnitized {
-            return asset.transactions.contains(where: { $0.config.closesAsset })
+            return txs.contains(where: { $0.config.closesAsset })
         }
-        let remainingUnits = totalUnits(for: asset)
-        return abs(remainingUnits) <= 0.000001 && asset.transactions.contains(where: { $0.type == .buy })
+        let remainingUnits = totalUnits(for: txs)
+        return abs(remainingUnits) <= 0.000001 && txs.contains(where: { $0.type == .buy })
     }
     
-    static func totalInterestAccrued(for asset: Asset) -> Double {
-        asset.transactions.filter { $0.config.affectsProfit }.reduce(0.0) { $0 + $1.amount }
+    static func totalInterestAccrued(for asset: Asset, asOf date: Date? = nil) -> Double {
+        let txs = date != nil ? asset.transactions.filter { $0.date <= date! } : asset.transactions
+        return txs.filter { $0.config.affectsProfit }.reduce(0.0) { $0 + $1.amount }
     }
     
-    static func investedValue(for asset: Asset) -> Double {
-        if isSoldOff(asset) {
+    static func investedValue(for asset: Asset, asOf date: Date? = nil) -> Double {
+        if isSoldOff(asset, asOf: date) {
             return 0.0
         }
+        let txs = date != nil ? asset.transactions.filter { $0.date <= date! } : asset.transactions
         if asset.holdingType.isNonUnitized {
-            let txInvested = asset.transactions.reduce(0.0) { sum, tx in
+            let txInvested = txs.reduce(0.0) { sum, tx in
                 let cfg = tx.config
                 guard cfg.affectsInvestedAmount else { return sum }
                 if cfg.cashDirection == .outflow {
@@ -122,10 +126,10 @@ enum PortfolioMetrics {
             if asset.premiumAmount > 0 {
                 return asset.premiumAmount
             }
-            let totalProfit = totalInterestAccrued(for: asset)
+            let totalProfit = totalInterestAccrued(for: asset, asOf: date)
             return max(0, asset.currentPrice - totalProfit)
         }
-        return FifoCalculator.calculate(transactions: asset.transactions).holdings.reduce(0.0) { partialResult, lot in
+        return FifoCalculator.calculate(transactions: txs).holdings.reduce(0.0) { partialResult, lot in
             partialResult + (lot.remainingUnits * lot.buyPrice)
         }
     }
@@ -148,12 +152,13 @@ enum PortfolioMetrics {
         return FifoCalculator.calculate(transactions: asset.transactions).lifetimeRetrieved
     }
     
-    static func currentValue(for asset: Asset) -> Double {
-        if isSoldOff(asset) {
+    static func currentValue(for asset: Asset, asOf date: Date? = nil) -> Double {
+        if isSoldOff(asset, asOf: date) {
             return 0.0
         }
+        let txs = date != nil ? asset.transactions.filter { $0.date <= date! } : asset.transactions
         if asset.holdingType.isNonUnitized {
-            let txBalance = asset.transactions.reduce(0.0) { sum, tx in
+            let txBalance = txs.reduce(0.0) { sum, tx in
                 let cfg = tx.config
                 guard cfg.affectsAssetValue else { return sum }
                 if cfg.cashDirection == .outflow || cfg.cashDirection == .internalAccrual {
@@ -166,9 +171,18 @@ enum PortfolioMetrics {
             if txBalance > 0 {
                 return max(txBalance, asset.currentPrice)
             }
-            return asset.currentPrice
+            if asset.currentPrice > 0 {
+                return asset.currentPrice
+            }
+            if asset.principalAmount > 0 {
+                return asset.principalAmount
+            }
+            if asset.premiumAmount > 0 {
+                return asset.premiumAmount
+            }
+            return 0.0
         }
-        return totalUnits(for: asset) * asset.currentPrice
+        return totalUnits(for: txs) * asset.currentPrice
     }
     
     static func unrealizedGainLoss(for asset: Asset) -> Double {
@@ -305,12 +319,13 @@ enum PortfolioMetrics {
         return catCurrency.exchangeRate / inrCurrency.exchangeRate
     }
     
-    static func investedValueInINR(for asset: Asset, rate: Double) -> Double {
+    static func investedValueInINR(for asset: Asset, rate: Double, asOf date: Date? = nil) -> Double {
         if asset.holdingType.isNonUnitized {
-            let invLocal = investedValue(for: asset)
+            let invLocal = investedValue(for: asset, asOf: date)
             return invLocal * rate
         }
-        return FifoCalculator.calculateInINR(transactions: asset.transactions, categoryExchangeRate: rate).holdings.reduce(0.0) { partialResult, lot in
+        let txs = date != nil ? asset.transactions.filter { $0.date <= date! } : asset.transactions
+        return FifoCalculator.calculateInINR(transactions: txs, categoryExchangeRate: rate).holdings.reduce(0.0) { partialResult, lot in
             partialResult + lot.remainingUnits * lot.buyPriceINR
         }
     }
@@ -329,11 +344,12 @@ enum PortfolioMetrics {
         return FifoCalculator.calculateInINR(transactions: asset.transactions, categoryExchangeRate: rate).lifetimeRetrieved
     }
     
-    static func currentValueInINR(for asset: Asset, rate: Double) -> Double {
+    static func currentValueInINR(for asset: Asset, rate: Double, asOf date: Date? = nil) -> Double {
         if asset.holdingType.isNonUnitized {
-            return currentValue(for: asset) * rate
+            return currentValue(for: asset, asOf: date) * rate
         }
-        return totalUnits(for: asset) * asset.currentPrice * rate
+        let txs = date != nil ? asset.transactions.filter { $0.date <= date! } : asset.transactions
+        return totalUnits(for: txs) * asset.currentPrice * rate
     }
     
     static func unrealizedGainLossInINR(for asset: Asset, rate: Double) -> Double {

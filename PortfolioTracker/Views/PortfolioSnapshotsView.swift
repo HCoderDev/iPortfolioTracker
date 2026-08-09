@@ -231,8 +231,15 @@ struct PortfolioSnapshotsView: View {
         var overallCurrentValueINR = 0.0
         var overallInvestedINR = 0.0
         
+        var processedAssetIDs = Set<PersistentIdentifier>()
+        
+        // 1. Process categorized assets
         for category in categories {
             let assetsInCat = allAssets.filter { $0.category?.persistentModelID == category.persistentModelID }
+            for asset in assetsInCat {
+                processedAssetIDs.insert(asset.persistentModelID)
+            }
+            
             let rate = PortfolioMetrics.currentInrExchangeRate(for: category, currencies: currencies)
             
             var catInvested = 0.0
@@ -243,49 +250,15 @@ struct PortfolioSnapshotsView: View {
             var tempAssetSnaps: [AssetSnapshot] = []
             
             for asset in assetsInCat {
-                let filteredTx = asset.transactions.filter { $0.date <= date }
+                if PortfolioMetrics.isSoldOff(asset, asOf: date) { continue }
                 
-                let units: Double
-                if asset.holdingType.isNonUnitized {
-                    units = 1.0
-                } else {
-                    units = filteredTx.reduce(0.0) { partialResult, transaction in
-                        switch transaction.type {
-                        case .buy: return partialResult + transaction.units
-                        case .sell: return partialResult - transaction.units
-                        case .dividend: return partialResult
-                        }
-                    }
-                }
+                let units = PortfolioMetrics.totalUnits(for: asset, asOf: date)
+                let invested = PortfolioMetrics.investedValue(for: asset, asOf: date)
+                let currentValue = PortfolioMetrics.currentValue(for: asset, asOf: date)
+                let investedINR = PortfolioMetrics.investedValueInINR(for: asset, rate: rate, asOf: date)
+                let currentValueINR = PortfolioMetrics.currentValueInINR(for: asset, rate: rate, asOf: date)
                 
-                guard units > 0 else { continue }
-                
-                let invested: Double
-                if asset.holdingType.isNonUnitized {
-                    let totalInterest = filteredTx.filter { $0.type == .dividend }.reduce(0.0) { $0 + $1.amount }
-                    invested = max(0, asset.currentPrice - totalInterest)
-                } else {
-                    invested = FifoCalculator.calculate(transactions: filteredTx).holdings.reduce(0.0) { partialResult, lot in
-                        partialResult + (lot.remainingUnits * lot.buyPrice)
-                    }
-                }
-                
-                let currentValue = asset.holdingType.isNonUnitized ? asset.currentPrice : (units * asset.currentPrice)
-                
-                let investedINR = asset.holdingType.isNonUnitized ? {
-                    let totalInterest = filteredTx.filter { $0.type == .dividend }.reduce(0.0) { sum, tx in
-                        let txRate = tx.inrExchangeRate ?? rate
-                        return sum + (tx.amount * txRate)
-                    }
-                    let currentValueInINR = asset.currentPrice * rate
-                    return max(0, currentValueInINR - totalInterest)
-                }() : {
-                    FifoCalculator.calculateInINR(transactions: filteredTx, categoryExchangeRate: rate).holdings.reduce(0.0) { partialResult, lot in
-                        partialResult + lot.remainingUnits * lot.buyPriceINR
-                    }
-                }()
-                
-                let currentValueINR = currentValue * rate
+                guard (currentValueINR > 0 || investedINR > 0 || units > 0) else { continue }
                 
                 overallCurrentValueINR += currentValueINR
                 overallInvestedINR += investedINR
@@ -295,10 +268,12 @@ struct PortfolioSnapshotsView: View {
                 catInvestedINR += investedINR
                 catCurrentValueINR += currentValueINR
                 
+                let displayPrice = asset.holdingType.isNonUnitized ? currentValue : asset.currentPrice
+                
                 let assetSnap = AssetSnapshot(
                     assetName: asset.name,
                     units: units,
-                    currentPrice: asset.currentPrice,
+                    currentPrice: displayPrice,
                     investedValue: invested,
                     currentValue: currentValue,
                     investedValueINR: investedINR,
@@ -311,6 +286,72 @@ struct PortfolioSnapshotsView: View {
                 let catSnap = CategorySnapshot(
                     categoryName: category.name,
                     currencyCode: category.currencyCode,
+                    investedValue: catInvested,
+                    currentValue: catCurrentValue,
+                    exchangeRateToINR: rate,
+                    investedValueINR: catInvestedINR,
+                    currentValueINR: catCurrentValueINR,
+                    portfolioSnapshot: newSnapshot
+                )
+                
+                for assetSnap in tempAssetSnaps {
+                    assetSnap.categorySnapshot = catSnap
+                    catSnap.assetSnapshots.append(assetSnap)
+                    modelContext.insert(assetSnap)
+                }
+                
+                newSnapshot.categorySnapshots.append(catSnap)
+                modelContext.insert(catSnap)
+            }
+        }
+        
+        // 2. Process uncategorized assets
+        let uncategorizedAssets = allAssets.filter { !processedAssetIDs.contains($0.persistentModelID) }
+        if !uncategorizedAssets.isEmpty {
+            let rate = 1.0
+            var catInvested = 0.0
+            var catCurrentValue = 0.0
+            var catInvestedINR = 0.0
+            var catCurrentValueINR = 0.0
+            var tempAssetSnaps: [AssetSnapshot] = []
+            
+            for asset in uncategorizedAssets {
+                if PortfolioMetrics.isSoldOff(asset, asOf: date) { continue }
+                
+                let units = PortfolioMetrics.totalUnits(for: asset, asOf: date)
+                let invested = PortfolioMetrics.investedValue(for: asset, asOf: date)
+                let currentValue = PortfolioMetrics.currentValue(for: asset, asOf: date)
+                let investedINR = PortfolioMetrics.investedValueInINR(for: asset, rate: rate, asOf: date)
+                let currentValueINR = PortfolioMetrics.currentValueInINR(for: asset, rate: rate, asOf: date)
+                
+                guard (currentValueINR > 0 || investedINR > 0 || units > 0) else { continue }
+                
+                overallCurrentValueINR += currentValueINR
+                overallInvestedINR += investedINR
+                
+                catInvested += invested
+                catCurrentValue += currentValue
+                catInvestedINR += investedINR
+                catCurrentValueINR += currentValueINR
+                
+                let displayPrice = asset.holdingType.isNonUnitized ? currentValue : asset.currentPrice
+                
+                let assetSnap = AssetSnapshot(
+                    assetName: asset.name,
+                    units: units,
+                    currentPrice: displayPrice,
+                    investedValue: invested,
+                    currentValue: currentValue,
+                    investedValueINR: investedINR,
+                    currentValueINR: currentValueINR
+                )
+                tempAssetSnaps.append(assetSnap)
+            }
+            
+            if !tempAssetSnaps.isEmpty {
+                let catSnap = CategorySnapshot(
+                    categoryName: "Uncategorized",
+                    currencyCode: "INR",
                     investedValue: catInvested,
                     currentValue: catCurrentValue,
                     exchangeRateToINR: rate,
@@ -359,49 +400,41 @@ struct TakeSnapshotSheet: View {
     private var previewMetrics: (totalValue: Double, totalInvested: Double) {
         var overallCurrentValueINR = 0.0
         var overallInvestedINR = 0.0
+        var processedAssetIDs = Set<PersistentIdentifier>()
         
         for category in categories {
             let assetsInCat = allAssets.filter { $0.category?.persistentModelID == category.persistentModelID }
+            for asset in assetsInCat {
+                processedAssetIDs.insert(asset.persistentModelID)
+            }
             let rate = PortfolioMetrics.currentInrExchangeRate(for: category, currencies: currencies)
             
             for asset in assetsInCat {
-                let filteredTx = asset.transactions.filter { $0.date <= snapshotDate }
+                if PortfolioMetrics.isSoldOff(asset, asOf: snapshotDate) { continue }
                 
-                let units: Double
-                if asset.holdingType.isNonUnitized {
-                    units = 1.0
-                } else {
-                    units = filteredTx.reduce(0.0) { partialResult, transaction in
-                        switch transaction.type {
-                        case .buy: return partialResult + transaction.units
-                        case .sell: return partialResult - transaction.units
-                        case .dividend: return partialResult
-                        }
-                    }
-                }
+                let units = PortfolioMetrics.totalUnits(for: asset, asOf: snapshotDate)
+                let investedINR = PortfolioMetrics.investedValueInINR(for: asset, rate: rate, asOf: snapshotDate)
+                let currentValueINR = PortfolioMetrics.currentValueInINR(for: asset, rate: rate, asOf: snapshotDate)
                 
-                guard units > 0 else { continue }
-                
-                let invested: Double
-                if asset.holdingType.isNonUnitized {
-                    let totalInterest = filteredTx.filter { $0.type == .dividend }.reduce(0.0) { sum, tx in
-                        let txRate = tx.inrExchangeRate ?? rate
-                        return sum + (tx.amount * txRate)
-                    }
-                    let currentValueInINR = asset.currentPrice * rate
-                    invested = max(0, currentValueInINR - totalInterest)
-                } else {
-                    invested = FifoCalculator.calculateInINR(transactions: filteredTx, categoryExchangeRate: rate).holdings.reduce(0.0) { partialResult, lot in
-                        partialResult + lot.remainingUnits * lot.buyPriceINR
-                    }
-                }
-                
-                let currentValue = asset.holdingType.isNonUnitized ? asset.currentPrice : (units * asset.currentPrice)
-                let currentValueINR = currentValue * rate
+                guard (currentValueINR > 0 || investedINR > 0 || units > 0) else { continue }
                 
                 overallCurrentValueINR += currentValueINR
-                overallInvestedINR += invested
+                overallInvestedINR += investedINR
             }
+        }
+        
+        let uncategorizedAssets = allAssets.filter { !processedAssetIDs.contains($0.persistentModelID) }
+        for asset in uncategorizedAssets {
+            if PortfolioMetrics.isSoldOff(asset, asOf: snapshotDate) { continue }
+            
+            let units = PortfolioMetrics.totalUnits(for: asset, asOf: snapshotDate)
+            let investedINR = PortfolioMetrics.investedValueInINR(for: asset, rate: 1.0, asOf: snapshotDate)
+            let currentValueINR = PortfolioMetrics.currentValueInINR(for: asset, rate: 1.0, asOf: snapshotDate)
+            
+            guard (currentValueINR > 0 || investedINR > 0 || units > 0) else { continue }
+            
+            overallCurrentValueINR += currentValueINR
+            overallInvestedINR += investedINR
         }
         
         return (overallCurrentValueINR, overallInvestedINR)

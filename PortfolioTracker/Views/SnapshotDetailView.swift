@@ -239,9 +239,15 @@ struct SnapshotDetailView: View {
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                     
-                    Text("Units: \(assetSnap.units.formatted2) · Price: \(originalSymbol)\(assetSnap.currentPrice.formatted2)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                    if abs(assetSnap.units - 1.0) < 0.0001 && assetSnap.currentPrice == assetSnap.currentValue {
+                        Text("Value: \(originalSymbol)\(assetSnap.currentValue.formatted2)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("Units: \(assetSnap.units.formatted2) · Price: \(originalSymbol)\(assetSnap.currentPrice.formatted2)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.leading, 20)
