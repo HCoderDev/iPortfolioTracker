@@ -194,6 +194,11 @@ struct HoldingAgeDistributionCard: View {
         return "\(currencySymbol)\(compact)"
     }
     
+    private var activeBucketStats: [BucketStat] {
+        let active = bucketStats.filter { $0.units > 0 }
+        return active.isEmpty ? bucketStats : active
+    }
+    
     var body: some View {
         if assets.isEmpty || totalUnits <= 0 {
             EmptyView()
@@ -261,31 +266,45 @@ struct HoldingAgeDistributionCard: View {
                         .foregroundStyle(.secondary)
                 }
                 
-                // Visual Timeline Segmented Progress Bar
+                // Visual Timeline Segmented Progress Bar (Only Applicable Buckets)
                 VStack(spacing: 6) {
                     GeometryReader { geo in
+                        let active = activeBucketStats
+                        let totalCount = active.count
+                        let spacingTotal = CGFloat(max(0, totalCount - 1)) * 2
+                        let availableWidth = max(0, geo.size.width - spacingTotal)
+                        
                         HStack(spacing: 2) {
-                            ForEach(bucketStats) { stat in
-                                if stat.percentage > 0 {
-                                    Rectangle()
-                                        .fill(stat.bucket.themeColor)
-                                        .frame(width: max(3, geo.size.width * CGFloat(stat.percentage / 100.0)))
-                                }
+                            ForEach(active) { stat in
+                                Rectangle()
+                                    .fill(stat.bucket.themeColor)
+                                    .frame(width: max(4, availableWidth * CGFloat(stat.percentage / 100.0)))
                             }
                         }
                     }
                     .frame(height: 14)
                     .clipShape(RoundedRectangle(cornerRadius: 7))
                     
-                    // Timeline Age Labels below progress bar
-                    HStack(spacing: 0) {
-                        ForEach(HoldingAgeBucket.allCases) { bucket in
-                            Text(bucket.shortLabel)
-                                .font(.system(size: 9, weight: .semibold))
-                                .foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity)
+                    // Timeline Age Labels directly aligned under applicable segments
+                    GeometryReader { geo in
+                        let active = activeBucketStats
+                        let totalCount = active.count
+                        let spacingTotal = CGFloat(max(0, totalCount - 1)) * 2
+                        let availableWidth = max(0, geo.size.width - spacingTotal)
+                        
+                        HStack(spacing: 2) {
+                            ForEach(active) { stat in
+                                let segWidth = availableWidth * CGFloat(stat.percentage / 100.0)
+                                Text(stat.bucket.shortLabel)
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.7)
+                                    .frame(width: max(16, segWidth), alignment: .center)
+                            }
                         }
                     }
+                    .frame(height: 14)
                 }
                 .padding(.vertical, 4)
                 
@@ -300,7 +319,8 @@ struct HoldingAgeDistributionCard: View {
                         .textCase(.uppercase)
                     
                     VStack(spacing: 8) {
-                        ForEach(bucketStats) { stat in
+                        let displayStats = activeBucketStats
+                        ForEach(displayStats) { stat in
                             HStack {
                                 HStack(spacing: 8) {
                                     Circle()
@@ -327,7 +347,7 @@ struct HoldingAgeDistributionCard: View {
                                 }
                             }
                             
-                            if stat.bucket != bucketStats.last?.bucket {
+                            if stat.bucket != displayStats.last?.bucket {
                                 Divider().opacity(0.4)
                             }
                         }
@@ -339,4 +359,5 @@ struct HoldingAgeDistributionCard: View {
             .clipShape(RoundedRectangle(cornerRadius: 16))
         }
     }
+
 }
