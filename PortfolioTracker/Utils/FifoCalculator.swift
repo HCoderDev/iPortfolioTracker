@@ -164,6 +164,65 @@ struct FifoTaxResult {
     }
 }
 
+enum BuyLotStatus: String, CaseIterable, Identifiable {
+    case fullyHeld = "100% Held"
+    case partiallySold = "Partially Sold"
+    case fullySold = "Sold Out"
+    
+    var id: String { rawValue }
+}
+
+struct MatchedBuyLotInfo: Identifiable {
+    let id = UUID()
+    let buyTxID: PersistentIdentifier
+    let buyDate: Date
+    let sellDate: Date
+    let unitsTaken: Double
+    let buyPrice: Double
+    let buyPriceINR: Double
+    let sellPrice: Double
+    let sellPriceINR: Double
+    let realizedGL: Double
+    let realizedGLINR: Double
+    let holdingDays: Int
+    
+    var holdingDurationText: String {
+        FifoCalculator.formattedHoldingDuration(days: holdingDays)
+    }
+}
+
+struct TransactionFifoDetail {
+    let transactionID: PersistentIdentifier
+    let type: TransactionType
+    let date: Date
+    let units: Double
+    let pricePerUnit: Double
+    let pricePerUnitINR: Double
+    let amount: Double
+    let amountINR: Double
+    
+    // BUY specific fields
+    let remainingUnits: Double
+    let soldUnits: Double
+    let buyStatus: BuyLotStatus?
+    let activeHoldingDays: Int?
+    let activeHoldingDurationText: String?
+    let unrealizedGL: Double?
+    let unrealizedGLINR: Double?
+    let unrealizedGLPercent: Double?
+    let realizedGLForSoldUnits: Double?
+    let realizedGLForSoldUnitsINR: Double?
+    let realizedGLPercentForSoldUnits: Double?
+    let soldHoldingDurationText: String?
+    
+    // SELL specific fields
+    let realizedGLForSellTx: Double?
+    let realizedGLForSellTxINR: Double?
+    let realizedGLPercentForSellTx: Double?
+    let sellHoldingDurationText: String?
+    let matchedBuyLots: [MatchedBuyLotInfo]
+}
+
 struct FifoCalculator {
     
     /// Checks if a date falls within the current Indian Financial Year (starts April 1st).
@@ -586,5 +645,262 @@ struct FifoCalculator {
             }
             return $0.date < $1.date
         }
+    }
+    
+    // MARK: - Per-Transaction FIFO Breakdown
+    
+    static func formattedHoldingDuration(days: Int) -> String {
+        if days >= 365 {
+            let yrs = days / 365
+            let mos = (days % 365) / 30
+            if mos > 0 { return "\(yrs) yr \(mos) mo" }
+            return "\(yrs) yr"
+        } else if days >= 30 {
+            let mos = days / 30
+            let remDays = days % 30
+            if remDays > 0 && mos < 3 { return "\(mos) mo \(remDays) d" }
+            return "\(mos) mo"
+        } else {
+            return "\(days) d"
+        }
+    }
+    
+    static func detailedFifoBreakdown(
+        asset: Asset,
+        currencies: [Currency]
+    ) -> [PersistentIdentifier: TransactionFifoDetail] {
+        let categoryRate = PortfolioMetrics.currentInrExchangeRate(
+            for: asset.category ?? Category(name: "Temp", currencyCode: "INR"),
+            currencies: currencies
+        )
+        let sortedTx = orderedTransactions(asset.transactions)
+        
+        struct InternalBuyLot {
+            let txID: PersistentIdentifier
+            let buyTx: AssetTransaction
+            let buyDate: Date
+            let buyPrice: Double
+            let buyPriceINR: Double
+            let originalUnits: Double
+            var remainingUnits: Double
+            var soldMatches: [MatchedBuyLotInfo]
+        }
+        
+        var buyLots: [InternalBuyLot] = []
+        var sellMatchedLotsMap: [PersistentIdentifier: [MatchedBuyLotInfo]] = [:]
+        
+        for tx in sortedTx {
+            let txRate = tx.inrExchangeRate ?? categoryRate
+            switch tx.type {
+            case .buy:
+                buyLots.append(InternalBuyLot(
+                    txID: tx.persistentModelID,
+                    buyTx: tx,
+                    buyDate: tx.date,
+                    buyPrice: tx.pricePerUnit,
+                    buyPriceINR: tx.pricePerUnit * txRate,
+                    originalUnits: tx.units,
+                    remainingUnits: tx.units,
+                    soldMatches: []
+                ))
+            case .sell:
+                var unitsToSell = tx.units
+                var sellMatches: [MatchedBuyLotInfo] = []
+                
+                for i in 0..<buyLots.count {
+                    if unitsToSell <= 0.000001 { break }
+                    
+                    let lot = buyLots[i]
+                    if lot.remainingUnits > 0.000001 {
+                        let unitsTaken = min(unitsToSell, lot.remainingUnits)
+                        let daysHeld = max(0, Calendar.current.dateComponents([.day], from: lot.buyDate, to: tx.date).day ?? 0)
+                        
+                        let sellPrice = tx.pricePerUnit
+                        let sellPriceINR = tx.pricePerUnit * txRate
+                        
+                        let rGL = (sellPrice - lot.buyPrice) * unitsTaken
+                        let rGLINR = (sellPriceINR - lot.buyPriceINR) * unitsTaken
+                        
+                        let match = MatchedBuyLotInfo(
+                            buyTxID: lot.txID,
+                            buyDate: lot.buyDate,
+                            sellDate: tx.date,
+                            unitsTaken: unitsTaken,
+                            buyPrice: lot.buyPrice,
+                            buyPriceINR: lot.buyPriceINR,
+                            sellPrice: sellPrice,
+                            sellPriceINR: sellPriceINR,
+                            realizedGL: rGL,
+                            realizedGLINR: rGLINR,
+                            holdingDays: daysHeld
+                        )
+                        
+                        sellMatches.append(match)
+                        buyLots[i].soldMatches.append(match)
+                        buyLots[i].remainingUnits -= unitsTaken
+                        unitsToSell -= unitsTaken
+                    }
+                }
+                sellMatchedLotsMap[tx.persistentModelID] = sellMatches
+                
+            case .dividend:
+                break
+            }
+        }
+        
+        var result: [PersistentIdentifier: TransactionFifoDetail] = [:]
+        let buyLotsMap = Dictionary(uniqueKeysWithValues: buyLots.map { ($0.txID, $0) })
+        let currentPrice = asset.currentPrice
+        let currentPriceINR = currentPrice * categoryRate
+        let today = Date()
+        
+        for tx in sortedTx {
+            let txRate = tx.inrExchangeRate ?? categoryRate
+            let priceINR = tx.pricePerUnit * txRate
+            let amountINR = tx.amount * txRate
+            
+            switch tx.type {
+            case .buy:
+                if let lotState = buyLotsMap[tx.persistentModelID] {
+                    let remUnits = max(0, lotState.remainingUnits)
+                    let sUnits = max(0, tx.units - remUnits)
+                    
+                    let status: BuyLotStatus
+                    if sUnits <= 0.000001 {
+                        status = .fullyHeld
+                    } else if remUnits <= 0.000001 {
+                        status = .fullySold
+                    } else {
+                        status = .partiallySold
+                    }
+                    
+                    // Held portion metrics
+                    let ageDays = max(0, Calendar.current.dateComponents([.day], from: tx.date, to: today).day ?? 0)
+                    let activeDuration = formattedHoldingDuration(days: ageDays)
+                    
+                    let uGL = remUnits > 0 ? (currentPrice - tx.pricePerUnit) * remUnits : 0.0
+                    let uGLINR = remUnits > 0 ? (currentPriceINR - priceINR) * remUnits : 0.0
+                    let uGLPct = (remUnits > 0 && tx.pricePerUnit > 0) ? (uGL / (tx.pricePerUnit * remUnits)) * 100.0 : 0.0
+                    
+                    // Sold portion metrics
+                    let rGLSold = lotState.soldMatches.reduce(0.0) { $0 + $1.realizedGL }
+                    let rGLSoldINR = lotState.soldMatches.reduce(0.0) { $0 + $1.realizedGLINR }
+                    let costOfSold = tx.pricePerUnit * sUnits
+                    let rGLSoldPct = (sUnits > 0 && costOfSold > 0) ? (rGLSold / costOfSold) * 100.0 : 0.0
+                    
+                    let soldHoldingTimeString: String? = {
+                        guard !lotState.soldMatches.isEmpty else { return nil }
+                        let totalDays = lotState.soldMatches.reduce(0) { $0 + $1.holdingDays }
+                        let avgDays = totalDays / lotState.soldMatches.count
+                        return "Held \(formattedHoldingDuration(days: avgDays)) before sale"
+                    }()
+                    
+                    result[tx.persistentModelID] = TransactionFifoDetail(
+                        transactionID: tx.persistentModelID,
+                        type: .buy,
+                        date: tx.date,
+                        units: tx.units,
+                        pricePerUnit: tx.pricePerUnit,
+                        pricePerUnitINR: priceINR,
+                        amount: tx.amount,
+                        amountINR: amountINR,
+                        remainingUnits: remUnits,
+                        soldUnits: sUnits,
+                        buyStatus: status,
+                        activeHoldingDays: ageDays,
+                        activeHoldingDurationText: activeDuration,
+                        unrealizedGL: uGL,
+                        unrealizedGLINR: uGLINR,
+                        unrealizedGLPercent: uGLPct,
+                        realizedGLForSoldUnits: rGLSold,
+                        realizedGLForSoldUnitsINR: rGLSoldINR,
+                        realizedGLPercentForSoldUnits: rGLSoldPct,
+                        soldHoldingDurationText: soldHoldingTimeString,
+                        realizedGLForSellTx: nil as Double?,
+                        realizedGLForSellTxINR: nil as Double?,
+                        realizedGLPercentForSellTx: nil as Double?,
+                        sellHoldingDurationText: nil as String?,
+                        matchedBuyLots: lotState.soldMatches
+                    )
+                }
+                
+            case .sell:
+                let matches = sellMatchedLotsMap[tx.persistentModelID] ?? []
+                let rGL = matches.reduce(0.0) { $0 + $1.realizedGL }
+                let rGLINR = matches.reduce(0.0) { $0 + $1.realizedGLINR }
+                
+                let costOfMatches = matches.reduce(0.0) { $0 + ($1.buyPrice * $1.unitsTaken) }
+                let rGLPct = (costOfMatches > 0) ? (rGL / costOfMatches) * 100.0 : 0.0
+                
+                let sellHoldingTimeString: String? = {
+                    guard !matches.isEmpty else { return nil }
+                    let minDays = matches.map { $0.holdingDays }.min() ?? 0
+                    let maxDays = matches.map { $0.holdingDays }.max() ?? 0
+                    if minDays == maxDays {
+                        return "Held \(formattedHoldingDuration(days: minDays))"
+                    }
+                    return "Held \(formattedHoldingDuration(days: minDays)) – \(formattedHoldingDuration(days: maxDays))"
+                }()
+                
+                result[tx.persistentModelID] = TransactionFifoDetail(
+                    transactionID: tx.persistentModelID,
+                    type: .sell,
+                    date: tx.date,
+                    units: tx.units,
+                    pricePerUnit: tx.pricePerUnit,
+                    pricePerUnitINR: priceINR,
+                    amount: tx.amount,
+                    amountINR: amountINR,
+                    remainingUnits: 0.0,
+                    soldUnits: tx.units,
+                    buyStatus: nil as BuyLotStatus?,
+                    activeHoldingDays: nil as Int?,
+                    activeHoldingDurationText: nil as String?,
+                    unrealizedGL: nil as Double?,
+                    unrealizedGLINR: nil as Double?,
+                    unrealizedGLPercent: nil as Double?,
+                    realizedGLForSoldUnits: nil as Double?,
+                    realizedGLForSoldUnitsINR: nil as Double?,
+                    realizedGLPercentForSoldUnits: nil as Double?,
+                    soldHoldingDurationText: nil as String?,
+                    realizedGLForSellTx: rGL,
+                    realizedGLForSellTxINR: rGLINR,
+                    realizedGLPercentForSellTx: rGLPct,
+                    sellHoldingDurationText: sellHoldingTimeString,
+                    matchedBuyLots: matches
+                )
+                
+            case .dividend:
+                result[tx.persistentModelID] = TransactionFifoDetail(
+                    transactionID: tx.persistentModelID,
+                    type: .dividend,
+                    date: tx.date,
+                    units: 0.0,
+                    pricePerUnit: 0.0,
+                    pricePerUnitINR: 0.0,
+                    amount: tx.amount,
+                    amountINR: amountINR,
+                    remainingUnits: 0.0,
+                    soldUnits: 0.0,
+                    buyStatus: nil as BuyLotStatus?,
+                    activeHoldingDays: nil as Int?,
+                    activeHoldingDurationText: nil as String?,
+                    unrealizedGL: nil as Double?,
+                    unrealizedGLINR: nil as Double?,
+                    unrealizedGLPercent: nil as Double?,
+                    realizedGLForSoldUnits: nil as Double?,
+                    realizedGLForSoldUnitsINR: nil as Double?,
+                    realizedGLPercentForSoldUnits: nil as Double?,
+                    soldHoldingDurationText: nil as String?,
+                    realizedGLForSellTx: tx.amount,
+                    realizedGLForSellTxINR: amountINR,
+                    realizedGLPercentForSellTx: 100.0,
+                    sellHoldingDurationText: nil as String?,
+                    matchedBuyLots: []
+                )
+            }
+        }
+        
+        return result
     }
 }

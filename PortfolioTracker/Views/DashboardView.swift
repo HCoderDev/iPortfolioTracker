@@ -82,6 +82,8 @@ struct DashboardView: View {
                 allocations.append(PieSlice(label: category.name, value: catCurrentValueInINR))
             }
             
+            assetRows.sort(by: { $0.value > $1.value })
+            
             cards.append(CategoryCardData(
                 category: category,
                 invested: catInvested,
@@ -90,6 +92,9 @@ struct DashboardView: View {
                 assets: assetRows
             ))
         }
+        
+        allocations.sort(by: { $0.value > $1.value })
+        cards.sort(by: { $0.currentValue > $1.currentValue })
         
         return (totalValue, allocations, cards)
     }

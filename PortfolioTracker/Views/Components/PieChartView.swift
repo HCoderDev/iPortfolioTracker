@@ -16,7 +16,7 @@ struct PieChartView: View {
     let size: CGFloat
     
     init(slices: [PieSlice], size: CGFloat = 120) {
-        self.slices = slices
+        self.slices = slices.sorted(by: { $0.value > $1.value })
         self.size = size
     }
     

@@ -13,6 +13,7 @@ enum NavigationItem: String, CaseIterable, Identifiable {
     case assets = "Assets"
     case categories = "Categories"
     case flows = "Flows & Cash"
+    case buyDecisionHelper = "Buy Decision Helper"
     case passiveIncome = "Passive Income"
     case reminders = "Reminders"
     case importWizard = "Data Import"
@@ -30,6 +31,7 @@ enum NavigationItem: String, CaseIterable, Identifiable {
         case .assets: return "chart.line.uptrend.xyaxis"
         case .categories: return "square.grid.2x2.fill"
         case .flows: return "arrow.up.arrow.down.circle.fill"
+        case .buyDecisionHelper: return "cart.circle.fill"
         case .passiveIncome: return "banknote.fill"
         case .reminders: return "calendar.badge.clock"
         case .importWizard: return "square.and.arrow.down.on.square.fill"
@@ -150,6 +152,8 @@ struct ContentView: View {
             CategoryListView()
         case .flows:
             PortfolioFlowsView()
+        case .buyDecisionHelper:
+            BuyDecisionHelperListView()
         case .passiveIncome:
             PassiveIncomeView()
         case .reminders:

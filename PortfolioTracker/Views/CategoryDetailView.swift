@@ -127,6 +127,7 @@ struct CategoryDetailView: View {
             let value = isConversionActive ? PortfolioMetrics.currentValueInINR(for: asset, rate: rate) : PortfolioMetrics.currentValue(for: asset)
             return value > 0 ? PieSlice(label: asset.name, value: value) : nil
         }
+        .sorted(by: { $0.value > $1.value })
     }
     
     private var subCategoryAllocation: [PieSlice] {
@@ -370,6 +371,16 @@ struct CategoryDetailView: View {
                 if !allAssets.flatMap({ $0.transactions }).isEmpty {
                     TimelineChartView(assets: allAssets, currencyCode: category.currencyCode)
                 }
+                
+                // Holding Age Distribution Card (For unitized assets: Indian MFs, Indian Stocks, US Stocks)
+                HoldingAgeDistributionCard(
+                    assets: activeAssets,
+                    title: "\(category.name) Holding Age Distribution",
+                    currencyCode: category.currencyCode,
+                    displayInINR: isConversionActive,
+                    currentRate: rate
+                )
+                .padding(.horizontal)
                 
                 // Assets Header with Sold-Off Toggle
                 VStack(spacing: 8) {

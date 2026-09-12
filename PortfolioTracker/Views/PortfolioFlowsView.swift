@@ -412,7 +412,7 @@ struct PortfolioFlowsView: View {
                     }
                 }
                 
-                if assetInvested > 0 || assetWithdrawn > 0 || (assetBuy + assetSell + assetDiv) > 0 {
+                if assetInvested > 0 || assetWithdrawn > 0 || (assetBuy + assetSell) > 0 {
                     assetFlows.append(FlowItem(
                         id: "\(asset.persistentModelID)",
                         name: asset.name,
@@ -440,7 +440,7 @@ struct PortfolioFlowsView: View {
                 }
             }
             
-            if categoryInvested > 0 || categoryWithdrawn > 0 || !assetFlows.isEmpty || (categoryBuy + categorySell + categoryDiv) > 0 {
+            if categoryInvested > 0 || categoryWithdrawn > 0 || !assetFlows.isEmpty || (categoryBuy + categorySell) > 0 {
                 categoryFlows.append(CategoryFlow(
                     id: category.persistentModelID,
                     category: category,
@@ -464,67 +464,115 @@ struct PortfolioFlowsView: View {
         return (categoryFlows, totalInvested, totalWithdrawn, totalInvested - totalWithdrawn, totalBuyCount, totalSellCount, totalDivCount)
     }
     
+    @State private var showCopiedToast: Bool = false
+    
+    private func generateLLMPromptText() -> String {
+        let periodName: String = {
+            switch selectedPeriodType {
+            case .monthly: return "\(monthName(for: selectedMonth)) \(selectedYear)"
+            case .yearly: return "Year \(selectedYear)"
+            case .lifetime: return "Lifetime (\(startingYear) - \(currentYear))"
+            }
+        }()
+        
+        let currencySymbol = displayInINR ? "₹" : ""
+        let data = flowsData
+        
+        var prompt = """
+        # Portfolio Investment Inflows & Cash Flow Analysis Request
+        
+        **Period**: \(periodName)
+        **Display Currency**: \(displayInINR ? "INR (₹)" : "Native Asset Currency")
+        
+        ## 1. Summary Overview
+        - **Total Capital Invested**: \(currencySymbol)\(data.totalInvested.formattedComma)
+        - **Total Capital Withdrawn**: \(currencySymbol)\(data.totalWithdrawn.formattedComma)
+        - **Net Cash Flow**: \(currencySymbol)\(data.totalNetFlow.formattedComma)
+        - **Total Trade Activity**: \(data.totalBuyCount) BUYs, \(data.totalSellCount) SELLs, \(data.totalDivCount) Dividend Entries
+        
+        ## 2. Category & Asset Inflow Breakdown
+        """
+        
+        if selectedPeriodType == .monthly {
+            for catFlow in data.categories {
+                prompt += "\n\n### Category: \(catFlow.category.name)"
+                prompt += "\n- Net Category Inflow: \(currencySymbol)\(catFlow.netFlow.formattedComma) (\(catFlow.buyCount) B, \(catFlow.sellCount) S, \(catFlow.divCount) D)"
+                for assetFlow in catFlow.assetFlows {
+                    prompt += "\n  • \(assetFlow.name): Net \(currencySymbol)\(assetFlow.netFlow.formattedComma) (Invested \(currencySymbol)\(assetFlow.invested.formattedComma), Withdrawn \(currencySymbol)\(assetFlow.withdrawn.formattedComma)) [\(assetFlow.buyCount)B / \(assetFlow.sellCount)S]"
+                }
+            }
+        } else if selectedPeriodType == .yearly {
+            let yearlyRows = yearlyFlowsData
+            for row in yearlyRows {
+                prompt += "\n\n### Category: \(row.name)"
+                prompt += "\n- Annual Total Net Flow: \(currencySymbol)\(row.yearTotal.formattedComma) (\(row.yearBuyCount) B, \(row.yearSellCount) S)"
+                for aRow in row.assetRows {
+                    prompt += "\n  • \(aRow.name): Net \(currencySymbol)\(aRow.yearTotal.formattedComma) [\(aRow.yearBuyCount)B / \(aRow.yearSellCount)S]"
+                }
+            }
+        } else {
+            let lifetimeRows = lifetimeFlowsData
+            for row in lifetimeRows {
+                prompt += "\n\n### Category: \(row.name)"
+                prompt += "\n- Lifetime Net Capital Deployed: \(currencySymbol)\(row.overallNetFlow.formattedComma) (\(row.overallBuyCount) B, \(row.overallSellCount) S)"
+                for aRow in row.assetRows {
+                    prompt += "\n  • \(aRow.name): Net \(currencySymbol)\(aRow.overallNetFlow.formattedComma) [\(aRow.overallBuyCount)B / \(aRow.overallSellCount)S]"
+                }
+            }
+        }
+        
+        prompt += """
+        
+        ---
+        ## 3. Request for AI Portfolio Feedback
+        Based on the cash flow and investment inflow data above:
+        1. **Dollar Cost Averaging & Capital Deployment Discipline**: Evaluate if my capital deployment pacing and DCA consistency are effective.
+        2. **Category & Asset Concentration**: Identify any potential over-concentration risks or erratic buying/selling behavior.
+        3. **3 Actionable Portfolio Recommendations**: Provide 3 high-value, actionable feedback points to optimize future capital allocation.
+        """
+        
+        return prompt
+    }
+    
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 16) {
-                // Period Selector Card
-                VStack(spacing: 12) {
-                    HStack {
-                        Text("CURRENCY DISPLAY")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                    }
-                    
-                    Picker("Currency Display", selection: $displayInINR) {
-                        Text("INR (₹) Default").tag(true)
-                        Text("Native Currency").tag(false)
-                    }
-                    .pickerStyle(.segmented)
-                    
-                    Divider()
-                    
-                    Picker("Period Type", selection: $selectedPeriodType) {
-                        ForEach(PeriodType.allCases) { type in
-                            Text(type.rawValue).tag(type)
+                    // Period Selector Card
+                    VStack(spacing: 12) {
+                        HStack {
+                            Text("CURRENCY DISPLAY")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(.secondary)
+                            Spacer()
                         }
-                    }
-                    .pickerStyle(.segmented)
-                    
-                    if selectedPeriodType != .lifetime {
-                        HStack(spacing: 12) {
-                            // Year Selector
-                            Menu {
-                                Picker("Year", selection: $selectedYear) {
-                                    ForEach(availableYears, id: \.self) { year in
-                                        Text(String(year)).tag(year)
-                                    }
-                                }
-                            } label: {
-                                HStack {
-                                    Text("Year: \(String(selectedYear))")
-                                        .font(.system(size: 13, weight: .semibold))
-                                    Image(systemName: "chevron.down")
-                                        .font(.caption2)
-                                }
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 6)
-                                .background(AppTheme.accent)
-                                .clipShape(Capsule())
+                        
+                        Picker("Currency Display", selection: $displayInINR) {
+                            Text("INR (₹) Default").tag(true)
+                            Text("Native Currency").tag(false)
+                        }
+                        .pickerStyle(.segmented)
+                        
+                        Divider()
+                        
+                        Picker("Period Type", selection: $selectedPeriodType) {
+                            ForEach(PeriodType.allCases) { type in
+                                Text(type.rawValue).tag(type)
                             }
-                            
-                            // Month Selector (if monthly)
-                            if selectedPeriodType == .monthly {
+                        }
+                        .pickerStyle(.segmented)
+                        
+                        if selectedPeriodType != .lifetime {
+                            HStack(spacing: 12) {
+                                // Year Selector
                                 Menu {
-                                    Picker("Month", selection: $selectedMonth) {
-                                        ForEach(months, id: \.self) { month in
-                                            Text(monthName(for: month)).tag(month)
+                                    Picker("Year", selection: $selectedYear) {
+                                        ForEach(availableYears, id: \.self) { year in
+                                            Text(String(year)).tag(year)
                                         }
                                     }
                                 } label: {
                                     HStack {
-                                        Text(monthName(for: selectedMonth))
+                                        Text("Year: \(String(selectedYear))")
                                             .font(.system(size: 13, weight: .semibold))
                                         Image(systemName: "chevron.down")
                                             .font(.caption2)
@@ -532,29 +580,79 @@ struct PortfolioFlowsView: View {
                                     .foregroundStyle(.white)
                                     .padding(.horizontal, 14)
                                     .padding(.vertical, 6)
-                                    .background(AppTheme.accentSecondary)
+                                    .background(AppTheme.accent)
                                     .clipShape(Capsule())
+                                }
+                                
+                                // Month Selector (if monthly)
+                                if selectedPeriodType == .monthly {
+                                    Menu {
+                                        Picker("Month", selection: $selectedMonth) {
+                                            ForEach(months, id: \.self) { month in
+                                                Text(monthName(for: month)).tag(month)
+                                            }
+                                        }
+                                    } label: {
+                                        HStack {
+                                            Text(monthName(for: selectedMonth))
+                                                .font(.system(size: 13, weight: .semibold))
+                                            Image(systemName: "chevron.down")
+                                                .font(.caption2)
+                                        }
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 6)
+                                        .background(AppTheme.accentSecondary)
+                                        .clipShape(Capsule())
+                                    }
                                 }
                             }
                         }
                     }
-                }
-                .modifier(AppTheme.cardStyle())
-                .padding(.horizontal, 20)
-                
-                let data = flowsData
-                let currencyPrefix = displayInINR ? "₹" : ""
-                
-                // Comprehensive Combined Summary Card (Amounts + Trade Activity)
-                VStack(spacing: 14) {
-                    Text(selectedPeriodType == .monthly
-                         ? "Summary & Activity for \(monthName(for: selectedMonth)) \(selectedYear)"
-                         : (selectedPeriodType == .yearly
-                            ? "Summary & Activity for \(selectedYear)"
-                            : "Lifetime Summary & Activity (\(startingYear) - \(currentYear))"))
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(.primary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    .modifier(AppTheme.cardStyle())
+                    .padding(.horizontal, 20)
+                    
+                    let data = flowsData
+                    let currencyPrefix = displayInINR ? "₹" : ""
+                    
+                    // Comprehensive Combined Summary Card (Amounts + Trade Activity)
+                    VStack(spacing: 14) {
+                        HStack {
+                            Text(selectedPeriodType == .monthly
+                                 ? "Summary & Activity for \(monthName(for: selectedMonth)) \(selectedYear)"
+                                 : (selectedPeriodType == .yearly
+                                    ? "Summary & Activity for \(selectedYear)"
+                                    : "Lifetime Summary (\(startingYear) - \(currentYear))"))
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(.primary)
+                            
+                            Spacer()
+                            
+                            Button(action: {
+                                let promptText = generateLLMPromptText()
+                                UIPasteboard.general.string = promptText
+                                withAnimation {
+                                    showCopiedToast = true
+                                }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                                    withAnimation {
+                                        showCopiedToast = false
+                                    }
+                                }
+                            }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "doc.on.doc.fill")
+                                        .font(.system(size: 10, weight: .bold))
+                                    Text("Copy LLM Prompt")
+                                        .font(.system(size: 10, weight: .bold))
+                                }
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 5)
+                                .background(AppTheme.accent)
+                                .clipShape(Capsule())
+                            }
+                        }
                     
                     // Cash Flow Amounts Row
                     HStack {
@@ -818,6 +916,23 @@ struct PortfolioFlowsView: View {
                 Spacer(minLength: 40)
             }
             .padding(.vertical)
+        }
+        .overlay(alignment: .top) {
+            if showCopiedToast {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text("Copied LLM Prompt to Clipboard!")
+                        .font(.system(size: 13, weight: .bold))
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(Color(.systemBackground))
+                .clipShape(Capsule())
+                .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
+                .padding(.top, 10)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
         }
         .navigationTitle("Flows & Trade Activity")
     }

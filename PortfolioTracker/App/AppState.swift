@@ -115,6 +115,7 @@ final class AppState: ObservableObject {
         SubCategory.self,
         StockValueAnalysis.self,
         StockDCFAnalysis.self,
+        BuyDecisionHelper.self,
         AssetReminder.self,
         PortfolioSnapshot.self,
         CategorySnapshot.self,
